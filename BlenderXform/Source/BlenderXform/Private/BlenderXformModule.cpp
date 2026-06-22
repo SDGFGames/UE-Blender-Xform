@@ -44,7 +44,9 @@ public:
 		if (FSlateApplication::IsInitialized())
 		{
 			InputProcessor = MakeShared<FBlenderXformInputProcessor>();
-			FSlateApplication::Get().RegisterInputPreProcessor(InputProcessor);
+			// Index 0 = first in line, so no other pre-processor (editor or plugin) can swallow our
+			// keys first — notably Escape, which on macOS was being consumed before we saw it.
+			FSlateApplication::Get().RegisterInputPreProcessor(InputProcessor, 0);
 
 			FBlenderXformInputProcessor* Proc = InputProcessor.Get();
 			HUD = MakeUnique<FBlenderXformHUD>([Proc]() -> FString

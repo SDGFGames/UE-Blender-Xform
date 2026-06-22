@@ -182,6 +182,18 @@ bool FBlenderXformInputProcessor::HandleKeyDownEvent(FSlateApplication&, const F
 	return false;
 }
 
+bool FBlenderXformInputProcessor::HandleKeyUpEvent(FSlateApplication&, const FKeyEvent& InKeyEvent)
+{
+	// Belt-and-suspenders for Escape: on macOS the Escape key-DOWN can be swallowed before it
+	// reaches input pre-processors, so also honor it on key-up. RMB already cancels too.
+	if (Op.IsActive() && InKeyEvent.GetKey() == EKeys::Escape)
+	{
+		Op.Cancel();
+		return true;
+	}
+	return false;
+}
+
 bool FBlenderXformInputProcessor::HandleMouseMoveEvent(FSlateApplication&, const FPointerEvent&)
 {
 	if (Op.IsActive())

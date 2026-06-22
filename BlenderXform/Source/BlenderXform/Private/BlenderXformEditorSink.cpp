@@ -112,6 +112,13 @@ void FXEditorSink::Commit()
 	// Destroying the FScopedTransaction finalizes it into the undo buffer as one step.
 	Transaction.Reset();
 	Snapshot.Reset();
+
+	// We moved actor transforms directly, so re-seat the editor's transform gizmo on them.
+	if (GEditor)
+	{
+		GEditor->NoteSelectionChange();
+		GEditor->RedrawLevelEditingViewports();
+	}
 }
 
 void FXEditorSink::Cancel()
@@ -133,6 +140,7 @@ void FXEditorSink::Cancel()
 
 	if (GEditor)
 	{
+		GEditor->NoteSelectionChange();
 		GEditor->RedrawLevelEditingViewports();
 	}
 }
