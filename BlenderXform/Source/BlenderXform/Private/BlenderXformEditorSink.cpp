@@ -3,6 +3,7 @@
 #include "Editor.h"
 #include "Selection.h"
 #include "GameFramework/Actor.h"
+#include "Components/SceneComponent.h"
 #include "ScopedTransaction.h"
 
 #define LOCTEXT_NAMESPACE "BlenderXform"
@@ -45,7 +46,13 @@ void FXEditorSink::Begin()
 	{
 		if (AActor* Actor = Snap.Actor.Get())
 		{
+			// The transform lives on the root component, so it must be in the transaction too —
+			// modifying only the actor leaves the move/rotate/scale un-undoable.
 			Actor->Modify();
+			if (USceneComponent* Root = Actor->GetRootComponent())
+			{
+				Root->Modify();
+			}
 		}
 	}
 }

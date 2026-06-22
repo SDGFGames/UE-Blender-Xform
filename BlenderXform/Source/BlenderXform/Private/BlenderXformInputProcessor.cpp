@@ -140,6 +140,13 @@ bool FBlenderXformInputProcessor::HandleKeyDownEvent(FSlateApplication&, const F
 
 	if (Op.IsActive())
 	{
+		// Always let Cmd/Ctrl chords through, so system/editor shortcuts (Cmd+Z undo, Cmd+S save, ...)
+		// are never swallowed by an active op. Core to not breaking native UE.
+		if (InKeyEvent.IsCommandDown() || InKeyEvent.IsControlDown())
+		{
+			return false;
+		}
+
 		if (K == EKeys::X) { Op.CycleAxis(EXAxis::X, bShift); UpdateFromMouse(); return true; }
 		if (K == EKeys::Y) { Op.CycleAxis(EXAxis::Y, bShift); UpdateFromMouse(); return true; }
 		if (K == EKeys::Z) { Op.CycleAxis(EXAxis::Z, bShift); UpdateFromMouse(); return true; }
