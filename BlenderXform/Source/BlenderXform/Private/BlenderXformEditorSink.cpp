@@ -21,20 +21,46 @@ bool FXEditorSink::HasSelection() const
 void FXEditorSink::CaptureSelection()
 {
 	Snapshot.Reset();
+	FullSelection.Reset();
 	FVector Sum = FVector::ZeroVector;
 	int32 Count = 0;
 
 	if (GEditor)
 	{
 		USelection* Sel = GEditor->GetSelectedActors();
+
+		// Collect the selected set first, so we can skip any actor a selected ANCESTOR will move via
+		// attachment — transforming both would translate the child twice.
+		TSet<AActor*> Selected;
 		for (FSelectionIterator It(*Sel); It; ++It)
 		{
 			if (AActor* Actor = Cast<AActor>(*It))
 			{
-				Snapshot.Add({ Actor, Actor->GetActorTransform() });
-				Sum += Actor->GetActorLocation();
-				++Count;
+				Selected.Add(Actor);
 			}
+		}
+
+		for (AActor* Actor : Selected)
+		{
+			// Every selected actor counts toward the median pivot and must be re-selected after a
+			// cancel — so track them all here, independent of the transform filter below.
+			FullSelection.Add(Actor);
+			Sum += Actor->GetActorLocation();
+			++Count;
+
+			// But don't transform an actor a selected ANCESTOR will already move via attachment —
+			// applying to both would translate the child twice.
+			bool bAncestorSelected = false;
+			for (AActor* P = Actor->GetAttachParentActor(); P; P = P->GetAttachParentActor())
+			{
+				if (Selected.Contains(P)) { bAncestorSelected = true; break; }
+			}
+			if (bAncestorSelected)
+			{
+				continue;
+			}
+
+			Snapshot.Add({ Actor, Actor->GetActorTransform() });
 		}
 	}
 
@@ -47,7 +73,9 @@ void FXEditorSink::CaptureSelection()
 	ActiveBZ = FVector::UpVector;
 	if (GEditor)
 	{
-		if (AActor* Active = GEditor->GetSelectedActors()->GetTop<AActor>())
+		// GetBottom = most recently selected = UE's "active" actor (matches Blender's active-element
+		// orientation); GetTop would be the earliest-selected.
+		if (AActor* Active = GEditor->GetSelectedActors()->GetBottom<AActor>())
 		{
 			const FQuat Q = Active->GetActorQuat();
 			ActiveBX = Q.GetAxisX();
@@ -122,6 +150,9 @@ void FXEditorSink::Apply(const FXApplied& In)
 		}
 
 		Actor->SetActorTransform(T, false, nullptr, ETeleportType::TeleportPhysics);
+		// Interactive (non-final) move notification so Blueprint actors, lights, and construction
+		// scripts update live during the drag — SetActorTransform alone doesn't trigger them.
+		Actor->PostEditMove(false);
 	}
 
 	// Make the editor's transform gizmo follow the selection live during the drag. The widget draws
@@ -138,12 +169,24 @@ void FXEditorSink::Apply(const FXApplied& In)
 
 	if (GEditor)
 	{
-		GEditor->RedrawLevelEditingViewports();
+		// Mid-drag: don't rebuild hit proxies every frame (expensive); pick-accuracy is restored on
+		// Commit/Cancel, which redraw with the default (invalidate-hit-proxies = true).
+		GEditor->RedrawLevelEditingViewports(/*bInvalidateHitProxies*/ false);
 	}
 }
 
 void FXEditorSink::Commit()
 {
+	// Final move notification (bFinished=true) so Blueprints/construction scripts run their full
+	// post-edit path; must happen while the transaction is still open and the snapshot is intact.
+	for (const FSnap& Snap : Snapshot)
+	{
+		if (AActor* Actor = Snap.Actor.Get())
+		{
+			Actor->PostEditMove(true);
+		}
+	}
+
 	// Destroying the FScopedTransaction finalizes it into the undo buffer as one step.
 	Transaction.Reset();
 	Snapshot.Reset();
@@ -179,17 +222,13 @@ void FXEditorSink::Cancel()
 	// actors and re-assert them over the next few frames from the processor's Tick (DrainReselect),
 	// which lands after the native deselect. RMB-cancel consumes its own event (no native deselect),
 	// so DrainReselect just sees them still selected and does nothing.
-	PendingReselect.Reset();
-	for (const FSnap& Snap : Snapshot)
-	{
-		if (AActor* Actor = Snap.Actor.Get())
-		{
-			PendingReselect.Add(Actor);
-		}
-	}
+	// Re-select the FULL original selection (including attached children that were filtered out of the
+	// transform snapshot) — otherwise the native Escape-deselect leaves those children deselected.
+	PendingReselect = FullSelection;
 	ReselectTicksLeft = 3;
 
 	Snapshot.Reset();
+	FullSelection.Reset();
 
 	if (GEditor)
 	{
@@ -246,6 +285,11 @@ void FXEditorSink::DrainReselect()
 FVector FXEditorSink::Pivot() const
 {
 	return CachedPivot;
+}
+
+bool FXEditorSink::HasLiveSnapshot() const
+{
+	return Snapshot.ContainsByPredicate([](const FSnap& S) { return S.Actor.IsValid(); });
 }
 
 void FXEditorSink::ActiveBasis(FVector& X, FVector& Y, FVector& Z) const

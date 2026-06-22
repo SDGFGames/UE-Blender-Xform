@@ -244,4 +244,33 @@ bool FBlenderXformMathScaleAxisTest::RunTest(const FString&)
 	return true;
 }
 
+// --- Ray/plane intersection with the behind-camera guard (deproject safety). ---
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformMathRayPlaneTest, "BlenderXform.Math.RayPlaneIntersect",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FBlenderXformMathRayPlaneTest::RunTest(const FString&)
+{
+	bool bValid = false;
+
+	// Straight hit: ray from (0,0,10) down -Z onto the z=0 plane -> (0,0,0).
+	const FVector Hit = FBlenderXformMath::RayPlaneIntersect(
+		FVector(0, 0, 10), FVector(0, 0, -1), FVector::ZeroVector, FVector(0, 0, 1), bValid);
+	TestTrue(TEXT("valid hit"), bValid);
+	TestTrue(TEXT("hits plane origin"), Hit.Equals(FVector::ZeroVector, 1e-3));
+
+	// Parallel ray -> invalid, returns the plane point sentinel.
+	const FVector Par = FBlenderXformMath::RayPlaneIntersect(
+		FVector(0, 0, 10), FVector(1, 0, 0), FVector(7, 7, 0), FVector(0, 0, 1), bValid);
+	TestFalse(TEXT("parallel is invalid"), bValid);
+	TestTrue(TEXT("parallel returns plane point"), Par.Equals(FVector(7, 7, 0), 1e-3));
+
+	// Plane behind the ray origin (t<0) -> invalid, returns the plane point (zero-delta sentinel).
+	const FVector Behind = FBlenderXformMath::RayPlaneIntersect(
+		FVector(0, 0, 10), FVector(0, 0, 1), FVector::ZeroVector, FVector(0, 0, 1), bValid);
+	TestFalse(TEXT("behind-origin is invalid"), bValid);
+	TestTrue(TEXT("behind returns plane point"), Behind.Equals(FVector::ZeroVector, 1e-3));
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

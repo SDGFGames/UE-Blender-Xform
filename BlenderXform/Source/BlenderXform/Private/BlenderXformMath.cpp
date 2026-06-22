@@ -26,6 +26,25 @@ FVector FBlenderXformMath::ConstrainVector(const FVector& V, const FXConstraint&
 	return C.bPlane ? (V - Along) : Along;
 }
 
+FVector FBlenderXformMath::RayPlaneIntersect(const FVector& RayOrigin, const FVector& RayDir,
+                                             const FVector& PlanePoint, const FVector& PlaneNormal, bool& bOutValid)
+{
+	const double Denom = FVector::DotProduct(RayDir, PlaneNormal);
+	if (FMath::Abs(Denom) < 1e-6)
+	{
+		bOutValid = false; // ray parallel to the plane
+		return PlanePoint;
+	}
+	const double T = FVector::DotProduct(PlanePoint - RayOrigin, PlaneNormal) / Denom;
+	if (T < 0.0)
+	{
+		bOutValid = false; // hit is behind the ray origin (e.g. pivot plane behind the camera)
+		return PlanePoint;
+	}
+	bOutValid = true;
+	return RayOrigin + RayDir * T;
+}
+
 FVector FBlenderXformMath::MoveDelta(const FVector& WorldStart, const FVector& WorldNow,
                                      const FXConstraint& C, bool bNumeric, double NumericValue,
                                      const FXTuning& T)

@@ -1,6 +1,8 @@
 #include "BlenderXformInputProcessor.h"
 #include "BlenderXformSettings.h"
+#include "BlenderXformMath.h" // FBlenderXformMath::RayPlaneIntersect
 
+#include "CoreGlobals.h" // GFrameCounter
 #include "Framework/Application/SlateApplication.h"
 #include "GenericPlatform/GenericApplicationMessageHandler.h" // FModifierKeysState
 #include "Input/Events.h"
@@ -53,19 +55,6 @@ namespace
 		return FVector2D(-1.0, -1.0);
 	}
 
-	/** Intersect the ray deprojected from Pixel with the plane (PlanePt, PlaneN). */
-	FVector DeprojectToPlane(FSceneView* View, const FVector2D& Pixel, const FVector& PlanePt, const FVector& PlaneN)
-	{
-		FVector Origin, Dir;
-		View->DeprojectFVector2D(Pixel, Origin, Dir);
-		const double Denom = FVector::DotProduct(Dir, PlaneN);
-		if (FMath::Abs(Denom) < 1e-6)
-		{
-			return PlanePt;
-		}
-		const double T = FVector::DotProduct(PlanePt - Origin, PlaneN) / Denom;
-		return Origin + Dir * T;
-	}
 }
 
 bool FBlenderXformInputProcessor::IsEnabled() const
@@ -92,11 +81,24 @@ bool FBlenderXformInputProcessor::CanStartHere() const
 	{
 		return false;
 	}
+
+	// Don't hijack G/S/R while the user is navigating the viewport: WASD flight needs S (and the rest)
+	// while RMB is held, orbit uses Alt+LMB, pan uses MMB. If any mouse button is down, let the key
+	// fall through to UE — Blender likewise never starts a transform during navigation.
+	if (VC->Viewport->KeyState(EKeys::RightMouseButton) ||
+	    VC->Viewport->KeyState(EKeys::MiddleMouseButton) ||
+	    VC->Viewport->KeyState(EKeys::LeftMouseButton))
+	{
+		return false;
+	}
+
 	return Sink.HasSelection();
 }
 
 void FBlenderXformInputProcessor::CaptureStartCursor()
 {
+	// Read the settings-derived feel knobs once per op; per-move we only patch in Ctrl/Shift.
+	CachedBaseTuning = BuildTuning(false, false);
 	StartPixel = ViewportMousePixel(ActiveLevelViewport());
 	UpdateFromMouse();
 }
@@ -125,7 +127,10 @@ void FBlenderXformInputProcessor::RefreshTuningFromModifiers()
 	const FModifierKeysState M = FSlateApplication::Get().GetModifierKeys();
 	bLastSnap = M.IsControlDown();
 	bLastPrecision = M.IsShiftDown();
-	Op.SetTuning(BuildTuning(bLastSnap, bLastPrecision));
+	FXTuning T = CachedBaseTuning; // settings read once at op start; just patch the live modifier flags
+	T.bSnap = bLastSnap;
+	T.bPrecision = bLastPrecision;
+	Op.SetTuning(T);
 }
 
 void FBlenderXformInputProcessor::UpdateFromMouse()
@@ -138,26 +143,59 @@ void FBlenderXformInputProcessor::UpdateFromMouse()
 
 	RefreshTuningFromModifiers();
 
+	if (!EnsureViewCache(VC))
+	{
+		return;
+	}
+
+	const FVector Pivot = Sink.Pivot();
+
+	FVector2D PivotPixel;
+	if (!FSceneView::ProjectWorldToScreen(Pivot, CachedViewRect, CachedViewProj, PivotPixel))
+	{
+		return; // pivot is behind the camera; deprojecting against it would yield a garbage delta
+	}
+
 	const FVector2D NowPixel = ViewportMousePixel(VC);
+	const FVector WorldStart = DeprojectToPlane(StartPixel, Pivot, CachedCamFwd);
+	const FVector WorldNow   = DeprojectToPlane(NowPixel,   Pivot, CachedCamFwd);
+
+	Op.UpdateFromScreen(WorldStart, WorldNow, PivotPixel, StartPixel, NowPixel, CachedCamFwd);
+}
+
+bool FBlenderXformInputProcessor::EnsureViewCache(FLevelEditorViewportClient* VC)
+{
+	const uint64 Frame = GFrameCounter;
+	if (bViewCacheValid && CachedViewFrame == Frame && CachedViewVC == VC)
+	{
+		return true; // already computed this frame for this viewport
+	}
 
 	FSceneViewFamilyContext ViewFamily(FSceneViewFamily::ConstructionValues(
 		VC->Viewport, VC->GetScene(), VC->EngineShowFlags).SetRealtimeUpdate(VC->IsRealtime()));
 	FSceneView* View = VC->CalcSceneView(&ViewFamily);
 	if (!View)
 	{
-		return;
+		bViewCacheValid = false;
+		return false;
 	}
 
-	const FVector Pivot = Sink.Pivot();
-	const FVector CamFwd = View->GetViewDirection();
+	CachedViewRect    = View->UnscaledViewRect;
+	CachedViewProj    = View->ViewMatrices.GetViewProjectionMatrix();
+	CachedInvViewProj = View->ViewMatrices.GetInvViewProjectionMatrix();
+	CachedCamFwd      = View->GetViewDirection();
+	CachedViewFrame   = Frame;
+	CachedViewVC      = VC;
+	bViewCacheValid   = true;
+	return true;
+}
 
-	FVector2D PivotPixel;
-	FSceneView::ProjectWorldToScreen(Pivot, View->UnscaledViewRect, View->ViewMatrices.GetViewProjectionMatrix(), PivotPixel);
-
-	const FVector WorldStart = DeprojectToPlane(View, StartPixel, Pivot, CamFwd);
-	const FVector WorldNow   = DeprojectToPlane(View, NowPixel,   Pivot, CamFwd);
-
-	Op.UpdateFromScreen(WorldStart, WorldNow, PivotPixel, StartPixel, NowPixel, CamFwd);
+FVector FBlenderXformInputProcessor::DeprojectToPlane(const FVector2D& Pixel, const FVector& PlanePt, const FVector& PlaneN) const
+{
+	FVector Origin, Dir;
+	FSceneView::DeprojectScreenToWorld(Pixel, CachedViewRect, CachedInvViewProj, Origin, Dir);
+	bool bValid = false;
+	return FBlenderXformMath::RayPlaneIntersect(Origin, Dir, PlanePt, PlaneN, bValid);
 }
 
 void FBlenderXformInputProcessor::Tick(const float, FSlateApplication&, TSharedRef<ICursor>)
@@ -171,9 +209,9 @@ void FBlenderXformInputProcessor::Tick(const float, FSlateApplication&, TSharedR
 		return;
 	}
 
-	// Safety: never leave an op stranded (which would swallow all input). If the toggle went off or
-	// the viewport vanished mid-op, cancel and hand control back to UE.
-	if (!IsEnabled() || !ActiveLevelViewport())
+	// Safety: never leave an op stranded (which would swallow all input). If the toggle went off, the
+	// viewport vanished, or every snapshotted actor was deleted mid-op, cancel and hand control back.
+	if (!IsEnabled() || !ActiveLevelViewport() || !Sink.HasLiveSnapshot())
 	{
 		Op.Cancel();
 		return;

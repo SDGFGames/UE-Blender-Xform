@@ -60,7 +60,7 @@ public:
 			HUD = MakeUnique<FBlenderXformHUD>(
 				[Proc]() -> FString
 				{
-					return (Proc && Proc->GetOp().IsActive()) ? Proc->GetOp().HudString() : FString();
+					return (Proc && Proc->GetOp().IsActive()) ? Proc->GetOp().Hud() : FString();
 				},
 				[Proc]() -> FXAxisOverlay
 				{

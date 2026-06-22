@@ -3,6 +3,14 @@
 
 void FBlenderXformOp::Begin(EXMode InMode, IXApplySink& InSink)
 {
+	// Handing off to a different sink while active would overwrite Sink and leak its open transaction.
+	// Cleanly cancel the old op first. (Today there's a single sink, so this is belt-and-suspenders.)
+	if (IsActive() && Sink && Sink != &InSink)
+	{
+		Sink->Cancel();
+		Reset();
+	}
+
 	const bool bSwitching = IsActive() && Sink == &InSink;
 
 	Mode = InMode;
@@ -107,6 +115,14 @@ void FBlenderXformOp::SetTuning(const FXTuning& InTuning)
 	// hot per-mouse-move path stays single-apply. (The processor re-feeds the cursor when only a
 	// modifier changed, so Ctrl/Shift toggles still re-apply.)
 	Tuning = InTuning;
+
+	// Refresh the HUD badges here too: tuning is pushed at the top of the cursor update, which can
+	// early-return (pivot behind camera, view not ready) before reaching Recompute — without this the
+	// [snap]/[fine] badge could lag the actual snapping state for the rest of the op.
+	if (IsActive())
+	{
+		CachedHud = HudString();
+	}
 }
 
 void FBlenderXformOp::UpdateFromScreen(const FVector& WorldStart, const FVector& WorldNow,
@@ -222,6 +238,7 @@ void FBlenderXformOp::Reset()
 	NumVal = 0.0;
 	Sink = nullptr;
 	Applied = FXApplied();
+	CachedHud.Empty();
 	// Tuning intentionally persists across ops; it is owned/refreshed by the input processor.
 }
 
@@ -293,4 +310,7 @@ void FBlenderXformOp::Recompute()
 
 	Applied = A;
 	Sink->Apply(A);
+
+	// Refresh the cached HUD string here (input-driven), so the per-frame draw just reads it.
+	CachedHud = HudString();
 }

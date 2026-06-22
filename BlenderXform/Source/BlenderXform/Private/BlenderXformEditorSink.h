@@ -38,6 +38,9 @@ public:
 	/** Instantly clear one transform component on the selection (Blender Alt+G/S/R), as one undo step. */
 	void ClearComponent(EXMode Mode);
 
+	/** True while at least one snapshotted actor is still alive (false once they're all deleted mid-op). */
+	bool HasLiveSnapshot() const;
+
 private:
 	struct FSnap
 	{
@@ -57,6 +60,7 @@ private:
 	FVector ActiveBY = FVector::RightVector;
 	FVector ActiveBZ = FVector::UpVector;
 
+	TArray<TWeakObjectPtr<AActor>> FullSelection;    // ALL selected actors at op start (pivot median + re-select)
 	TArray<TWeakObjectPtr<AActor>> PendingReselect; // actors to keep selected after a cancel
 	int32 ReselectTicksLeft = 0;                     // frames remaining to re-assert PendingReselect
 };

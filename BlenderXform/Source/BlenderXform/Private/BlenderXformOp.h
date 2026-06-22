@@ -57,6 +57,7 @@ public:
 	double NumericValue() const { return NumVal; }
 	const FXApplied& LastApplied() const { return Applied; }
 	FString HudString() const;
+	const FString& Hud() const { return CachedHud; } // cached read-out, refreshed each Recompute (cheap per-frame draw)
 
 private:
 	void Reset();
@@ -73,6 +74,7 @@ private:
 	IXApplySink* Sink = nullptr;
 	FXTuning Tuning;        // live feel knobs fed by the input processor
 	FXApplied Applied;      // last preview pushed to the sink (for the HUD live read-out)
+	FString CachedHud;      // HudString() result, refreshed on each Recompute (read every draw frame)
 
 	FString NumBuf;
 	bool bHasNumeric = false;

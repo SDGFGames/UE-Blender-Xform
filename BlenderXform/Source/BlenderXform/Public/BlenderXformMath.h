@@ -65,6 +65,14 @@ struct FBlenderXformMath
 	static FTransform ScaleTransform(const FTransform& Start, const FVector& Pivot, const FMatrix& WorldScale);
 
 	/**
+	 * Intersect a ray (RayOrigin + t*RayDir, t >= 0) with a plane. Sets bOutValid = false and returns
+	 * PlanePoint when the ray is parallel to the plane OR the hit is behind the origin (t < 0) — e.g.
+	 * the pivot plane is behind the camera, which would otherwise deproject to a garbage world point.
+	 */
+	static FVector RayPlaneIntersect(const FVector& RayOrigin, const FVector& RayDir,
+	                                 const FVector& PlanePoint, const FVector& PlaneNormal, bool& bOutValid);
+
+	/**
 	 * Signed rotation angle in degrees about the constrained axis.
 	 *   numeric -> NumericValue
 	 *   mouse   -> signed screen-space sweep of (NowS-PivotS) relative to (StartS-PivotS),

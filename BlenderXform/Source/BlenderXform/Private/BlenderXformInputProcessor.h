@@ -8,6 +8,7 @@
 struct FKeyEvent;
 struct FPointerEvent;
 class FSlateApplication;
+class FLevelEditorViewportClient;
 
 /**
  * Slate input pre-processor implementing Blender-style modal G/S/R in the level viewport.
@@ -38,10 +39,24 @@ private:
 	void UpdateFromMouse();        // refresh tuning + deproject current cursor + feed the op
 	FXTuning BuildTuning(bool bSnap, bool bPrecision) const; // settings + live Ctrl(snap)/Shift(fine)
 	void RefreshTuningFromModifiers(); // read current Ctrl/Shift and push to the op (no key interception)
+	bool EnsureViewCache(FLevelEditorViewportClient* VC); // (re)compute the scene view at most once per frame
+	FVector DeprojectToPlane(const FVector2D& Pixel, const FVector& PlanePt, const FVector& PlaneN) const;
 
 	FBlenderXformOp Op;
 	FXEditorSink Sink;
 	FVector2D StartPixel = FVector2D::ZeroVector;
 	bool bLastSnap = false;        // last modifier state seen, to re-apply on a stationary Ctrl/Shift change
 	bool bLastPrecision = false;
+	FXTuning CachedBaseTuning;      // settings read once per op (modifiers patched in per move) — avoids per-move GetDefault
+
+	// Per-frame scene-view cache: CalcSceneView is rebuilt at most once per frame (and when the active
+	// viewport changes), so multiple mouse events in one frame reuse it. Keyed on GFrameCounter so it
+	// self-invalidates when the camera moves next frame.
+	uint64 CachedViewFrame = (uint64)-1;
+	FLevelEditorViewportClient* CachedViewVC = nullptr;
+	FIntRect CachedViewRect;
+	FMatrix CachedViewProj = FMatrix::Identity;
+	FMatrix CachedInvViewProj = FMatrix::Identity;
+	FVector CachedCamFwd = FVector::ForwardVector;
+	bool bViewCacheValid = false;
 };
