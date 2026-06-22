@@ -10,8 +10,8 @@
 
 ## Global Constraints
 
-- Engine: **UE 5.7**, Mac. Build via `…/SDGF_G1_Project/UE_5.7/Engine/Build/BatchFiles/Mac/Build.sh`.
-- Source of truth: `UE-Blender-Xform/BlenderXform/`. Deploy to host project **by symlink only**: `…/G1_Project/Plugins/BlenderXform`. **Touch nothing else** in `SDGF_G1_Project`. Cleanly removable.
+- Engine: **UE 5.7**, Mac. Build via `…/<YourUEProject>/UE_5.7/Engine/Build/BatchFiles/Mac/Build.sh`.
+- Source of truth: `UE-Blender-Xform/BlenderXform/`. Deploy to host project **by symlink only**: `…/<GameModule>/Plugins/BlenderXform`. **Touch nothing else** in `<YourUEProject>`. Cleanly removable.
 - Git: stage only paths under `UE-Blender-Xform/`. **Never `git add -A`.** No push (user pushes).
 - Non-breaking: toggle OFF ⇒ processor returns false for all input. Consume keys only when we own them. Never touch W/E.
 - Units: cm (move), degrees (rotate), factor (scale). Orientation: Global + Local (double-tap). Pivot: selection median. One Undo step per op.
@@ -150,9 +150,9 @@ class FBlenderXformOp {
 
 **Build command:**
 ```bash
-UE=/Users/rouseterry/G1Project/SDGF_G1_Project/UE_5.7
-UPROJ=/Users/rouseterry/G1Project/SDGF_G1_Project/G1_Project/G1_Project.uproject
-"$UE/Engine/Build/BatchFiles/Mac/Build.sh" G1_ProjectEditor Mac Development -Project="$UPROJ" -waitmutex
+UE=<UEPROJECT>/UE_5.7
+UPROJ=<UEPROJECT>/<GameModule>/<GameModule>.uproject
+"$UE/Engine/Build/BatchFiles/Mac/Build.sh" <GameModule>Editor Mac Development -Project="$UPROJ" -waitmutex
 ```
 - [ ] Build green after each task; fix errors before moving on.
 
@@ -160,8 +160,8 @@ UPROJ=/Users/rouseterry/G1Project/SDGF_G1_Project/G1_Project/G1_Project.uproject
 
 ### Task 8: Deploy (symlink) + real-machine e2e verification (acceptance gate)
 
-- [ ] **S1 Symlink:** `ln -s /Users/rouseterry/ClaudeAgent/UE-Blender-Xform/BlenderXform "/Users/rouseterry/G1Project/SDGF_G1_Project/G1_Project/Plugins/BlenderXform"` (only if absent).
-- [ ] **S2** Launch editor (or attach via `McpAutomationBridge`); place a cube at known transform.
+- [ ] **S1 Symlink:** `ln -s <repo>/BlenderXform "<UEPROJECT>/<GameModule>/Plugins/BlenderXform"` (only if absent).
+- [ ] **S2** Launch editor (or attach via `<ProjectMcpBridge>`); place a cube at known transform.
 - [ ] **S3 Verify via MCP + computer-use** each acceptance case from spec §7.3:
   - Toggle ON; `G X 5 Enter` → read actor → X increased by 5 (±ε).
   - `G Shift+Z` drag → Z unchanged.

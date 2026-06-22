@@ -2,9 +2,9 @@
 
 - **Date:** 2026-06-21
 - **Status:** Approved (brainstorming aligned)
-- **Workspace:** `/Users/rouseterry/ClaudeAgent/UE-Blender-Xform/`
-- **Target engine:** UE 5.7 (Mac), installed at `…/SDGF_G1_Project/UE_5.7/`
-- **Test host project:** `…/SDGF_G1_Project/G1_Project/G1_Project.uproject` — **test-only, plugin-only** (we touch nothing in that project except adding one entry under `Plugins/`, and it must be cleanly removable)
+- **Workspace:** `<repo>/`
+- **Target engine:** UE 5.7 (Mac), installed at `…/<YourUEProject>/UE_5.7/`
+- **Test host project:** `…/<YourUEProject>/<GameModule>/<GameModule>.uproject` — **test-only, plugin-only** (we touch nothing in that project except adding one entry under `Plugins/`, and it must be cleanly removable)
 
 ## 1. Goal & Acceptance Criteria
 
@@ -92,13 +92,13 @@ Commit (LMB/Enter): finalize transaction.  Cancel (RMB/Esc): restore snapshot + 
 
 1. **`FBlenderXformMath` (TDD, UE automation tests** à la `UEMatBridgeProbeTest.cpp`): synthetic camera + pivot + cursor → assert delta. Cases: `G X 5`⇒(5,0,0); `G Shift+Z`⇒delta.Z==0; `S 2` on free⇒uniform×2; `R Z 90`⇒yaw +90; Local axis with a rotated active actor⇒delta along the actor's basis.
 2. **`FBlenderXformOp`** automation tests: feed synthetic key/mouse sequences against a mockable "apply" sink; assert resulting transform + that Cancel restores and Commit keeps.
-3. **End-to-end real-machine (acceptance gate)** via MCP (`McpAutomationBridge`) + computer-use: place a cube at a known transform, toggle ON, run `G X 5 Enter`, read the actor transform back, assert +5 X. Repeat S/R, plane, Local, Cancel, and a toggle-OFF regression (G still toggles Game View).
+3. **End-to-end real-machine (acceptance gate)** via MCP (`<ProjectMcpBridge>`) + computer-use: place a cube at a known transform, toggle ON, run `G X 5 Enter`, read the actor transform back, assert +5 X. Repeat S/R, plane, Local, Cancel, and a toggle-OFF regression (G still toggles Game View).
 
 ## 8. Deployment & hygiene
 
 - Plugin source of truth lives in this workspace: `UE-Blender-Xform/BlenderXform/` (`.uplugin` + `Source/`).
-- Deploy by **symlink**: `…/G1_Project/Plugins/BlenderXform → …/UE-Blender-Xform/BlenderXform`. Single source of truth; clean removal = remove the symlink.
-- Build (fast iteration) via `…/UE_5.7/Engine/Build/BatchFiles/Mac/Build.sh G1_ProjectEditor Mac Development -Project=<uproject>`; or let the editor hot-compile on load.
+- Deploy by **symlink**: `…/<GameModule>/Plugins/BlenderXform → …/UE-Blender-Xform/BlenderXform`. Single source of truth; clean removal = remove the symlink.
+- Build (fast iteration) via `…/UE_5.7/Engine/Build/BatchFiles/Mac/Build.sh <GameModule>Editor Mac Development -Project=<uproject>`; or let the editor hot-compile on load.
 - Git: commit only files under `UE-Blender-Xform/` (never `git add -A`; the repo holds unrelated untracked user work). Pushing is the user's job.
 
 ## 9. Open / deferred
