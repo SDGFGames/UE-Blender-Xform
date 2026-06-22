@@ -136,11 +136,28 @@ void FXEditorSink::Cancel()
 		Transaction->Cancel(); // discard — nothing lands in the undo buffer
 		Transaction.Reset();
 	}
+
+	// The physical Escape that cancels us also fires UE's native "deselect all" (it reaches UE
+	// outside our pre-processor, so we can't swallow it). Blender keeps the selection after a
+	// cancel, so re-assert exactly the actors we were transforming. RMB-cancel doesn't need this
+	// (we consume that event), but re-selecting an already-selected set is harmless.
+	if (GEditor)
+	{
+		GEditor->SelectNone(/*bNoteSelectionChange*/ false, /*bDeselectBSPSurfs*/ true);
+		for (const FSnap& Snap : Snapshot)
+		{
+			if (AActor* Actor = Snap.Actor.Get())
+			{
+				GEditor->SelectActor(Actor, /*bInSelected*/ true, /*bNotify*/ false);
+			}
+		}
+		GEditor->NoteSelectionChange();
+	}
+
 	Snapshot.Reset();
 
 	if (GEditor)
 	{
-		GEditor->NoteSelectionChange();
 		GEditor->RedrawLevelEditingViewports();
 	}
 }
