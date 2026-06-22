@@ -1,7 +1,7 @@
 #include "BlenderXformStyle.h"
 
 #include "Styling/SlateStyleRegistry.h"
-#include "Brushes/SlateVectorImageBrush.h"
+#include "Brushes/SlateImageBrush.h" // FSlateVectorImageBrush
 #include "Interfaces/IPluginManager.h"
 #include "Misc/Paths.h"
 
