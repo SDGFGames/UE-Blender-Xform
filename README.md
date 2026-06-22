@@ -15,28 +15,32 @@ or plane, and confirm or cancel — exactly like Blender.
 - **Plane constraints** — `Shift+X` / `Shift+Y` / `Shift+Z` lock *out* that axis (transform in the other two).
 - **Global / Local** — press the same axis key again to toggle Global → Local → off (Local uses the active object's axes).
 - **Numeric entry** — type a value for an exact transform, e.g. `G X 5 Enter` moves +5 on X. Supports `.` and `-`.
-- **Snapping (`Ctrl`)** — hold **Ctrl** while dragging to snap: translate to a grid (default 10 uu), rotate to 5°, scale to 0.1 — exactly like Blender. Increments are configurable.
+- **Clear transforms** — `Alt+G` / `Alt+S` / `Alt+R` instantly reset location / scale / rotation (one undo step).
+- **Snapping (bound to UE)** — snap step sizes come from UE's viewport **Snap Settings** (translate / rotate / scale). When the matching grid-snap toggle is on, transforms snap automatically; hold **Ctrl** to force snapping on demand (Blender-style) even when the toggle is off.
 - **Precision (`Shift`)** — hold **Shift** while dragging for fine, slowed control (default 0.1×).
+- **Axis guide lines** — constraining to an axis draws Blender's red/green/blue guide line through the pivot.
 - **Adjustable feel** — `MouseSensitivity` / `RotateSensitivity` tune drag magnitude. (Typed values always stay exact, regardless of snap/sensitivity.)
-- **Confirm / Cancel** — **LMB or Enter** confirms; **RMB or Esc** cancels and restores.
+- **Confirm / Cancel** — **LMB or Enter** confirms; **RMB or Esc** cancels and restores (selection and gizmo snap back to the object).
 - **One undo step** — the whole operation is a single `Ctrl/Cmd+Z`.
 - **Viewport HUD** — shows the live state, e.g. `Move | X (local) | 5.00 [snap]`.
-- **Non-destructive toggle** — a toolbar button (and `bEnabled` setting) turns it off; native UE shortcuts (`G` = Game View, `R` = Scale gizmo, …) come straight back. **The toolbar icon reflects the state** — Blender-orange when on, muted/slashed when off.
+- **Non-destructive toggle** — a toolbar button, the **`Alt+Shift+B`** shortcut (rebindable), or the `bEnabled` setting turns it off; native UE shortcuts (`G` = Game View, `R` = Scale gizmo, …) come straight back. **The toolbar icon reflects the state** — Blender-orange when on, muted/slashed when off.
 
 ## Keymap
 
 | Key | Action |
 |---|---|
 | `G` / `S` / `R` | Start Move / Scale / Rotate |
+| `Alt`+`G` / `S` / `R` | Clear location / scale / rotation (instant) |
 | `X` / `Y` / `Z` | Constrain to that axis (press again → Local → off) |
 | `Shift`+`X`/`Y`/`Z` | Constrain to the plane perpendicular to that axis |
-| `Ctrl` (hold) | Snap to increments while dragging (grid / 5° / 0.1) |
+| `Ctrl` (hold) | Force snap on demand (uses UE's grid sizes) |
 | `Shift` (hold) | Precision: fine, slowed dragging |
 | `0-9` `.` `-` | Type an exact value |
 | `Enter` / `LMB` | Confirm |
 | `Esc` / `RMB` | Cancel (restores; keeps the selection) |
+| `Alt`+`Shift`+`B` | Toggle the plugin on/off (rebindable) |
 
-Snap increments and sensitivity live under *Editor Preferences → Plugins → Blender Transform Shortcuts* (categories **Feel** and **Snapping**).
+Sensitivity and precision live under *Editor Preferences → Plugins → Blender Transform Shortcuts* (**Feel**). **Snap step sizes are bound to UE's viewport Snap Settings** (the grid-snap dropdowns) — there's nothing to configure twice. Rebind the toggle under *Editor Preferences → Keyboard Shortcuts → Blender Transform*.
 
 > **Note on `Shift`:** `Shift`+an axis *key* sets a plane constraint; `Shift` *held during the drag* is precision. They compose — e.g. `S Shift+Z` then keep holding Shift to fine-scale in the XY plane.
 

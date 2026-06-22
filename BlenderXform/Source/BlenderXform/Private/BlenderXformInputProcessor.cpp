@@ -3,6 +3,8 @@
 #include "BlenderXformMath.h" // FBlenderXformMath::RayPlaneIntersect
 
 #include "CoreGlobals.h" // GFrameCounter
+#include "Editor.h"      // GEditor (viewport grid snap sizes)
+#include "Settings/LevelEditorViewportSettings.h" // per-mode grid-snap toggles
 #include "Framework/Application/SlateApplication.h"
 #include "GenericPlatform/GenericApplicationMessageHandler.h" // FModifierKeysState
 #include "Input/Events.h"
@@ -111,9 +113,16 @@ FXTuning FBlenderXformInputProcessor::BuildTuning(bool bSnap, bool bPrecision) c
 		T.MouseSensitivity  = S->MouseSensitivity;
 		T.RotateSensitivity = S->RotateSensitivity;
 		T.PrecisionScale    = S->PrecisionScale;
-		T.MoveSnap          = S->MoveSnapInterval;
-		T.RotateSnapDeg     = S->RotateSnapInterval;
-		T.ScaleSnap         = S->ScaleSnapInterval;
+	}
+	// Snap step sizes are bound to UE's viewport grid (translate/rotate/scale), so there's a single
+	// place to set them. Move/rotate snap their delta to UE's grid like the native gizmo; scale snaps
+	// the multiplicative factor to UE's scale step (Blender-style) — which equals the native gizmo's
+	// absolute snap only when the start scale is 1. FXTuning's defaults stand in if GEditor is null.
+	if (GEditor)
+	{
+		T.MoveSnap      = GEditor->GetGridSize();
+		T.RotateSnapDeg = GEditor->GetRotGridSize().Yaw;
+		T.ScaleSnap     = GEditor->GetScaleGridSize();
 	}
 	T.bSnap = bSnap;
 	T.bPrecision = bPrecision;
@@ -122,15 +131,34 @@ FXTuning FBlenderXformInputProcessor::BuildTuning(bool bSnap, bool bPrecision) c
 
 void FBlenderXformInputProcessor::RefreshTuningFromModifiers()
 {
-	// Blender semantics: Ctrl = snap, Shift = fine. We only READ the modifier state here; we never
-	// consume Ctrl/Shift key events, so Cmd/Ctrl+Z, Shift+axis (plane), etc. are all untouched.
+	// We only READ modifier state here; we never consume Ctrl/Shift key events, so Cmd/Ctrl+Z,
+	// Shift+axis (plane), etc. are all untouched.
 	const FModifierKeysState M = FSlateApplication::Get().GetModifierKeys();
-	bLastSnap = M.IsControlDown();
-	bLastPrecision = M.IsShiftDown();
-	FXTuning T = CachedBaseTuning; // settings read once at op start; just patch the live modifier flags
-	T.bSnap = bLastSnap;
-	T.bPrecision = bLastPrecision;
+	bLastShiftDown = M.IsShiftDown();
+	bLastSnapActive = ComputeSnapActive();
+
+	FXTuning T = CachedBaseTuning; // sizes/sensitivity read once at op start; patch live state here
+	T.bSnap = bLastSnapActive;
+	T.bPrecision = bLastShiftDown;
 	Op.SetTuning(T);
+}
+
+bool FBlenderXformInputProcessor::ComputeSnapActive() const
+{
+	// Snap engages when UE's grid snap for the CURRENT op's mode is on (so we follow the native gizmo's
+	// snap state), or when Ctrl is held (Blender on-demand snap). Step sizes come from the same UE grid
+	// (see BuildTuning).
+	if (const ULevelEditorViewportSettings* VP = GetDefault<ULevelEditorViewportSettings>())
+	{
+		switch (Op.GetMode())
+		{
+			case EXMode::Move:   if (VP->GridEnabled)      { return true; } break;
+			case EXMode::Rotate: if (VP->RotGridEnabled)   { return true; } break;
+			case EXMode::Scale:  if (VP->SnapScaleEnabled) { return true; } break;
+			default: break;
+		}
+	}
+	return FSlateApplication::Get().GetModifierKeys().IsControlDown();
 }
 
 void FBlenderXformInputProcessor::UpdateFromMouse()
@@ -217,12 +245,12 @@ void FBlenderXformInputProcessor::Tick(const float, FSlateApplication&, TSharedR
 		return;
 	}
 
-	// Re-apply snapping/precision the instant Ctrl/Shift is pressed or released, even with a still
-	// cursor (Blender lets you tap Ctrl mid-op to snap in place). Only fires on a state change, so
-	// the steady-state per-frame cost stays nil.
+	// Re-apply the instant the snap state (Ctrl OR the UE grid-snap toggle) or Shift changes, even with
+	// a still cursor (Blender lets you tap Ctrl mid-op to snap in place; flipping UE's snap button mid-op
+	// counts too). Only fires on a state change, so the steady-state per-frame cost stays nil.
 	{
 		const FModifierKeysState M = FSlateApplication::Get().GetModifierKeys();
-		if (M.IsControlDown() != bLastSnap || M.IsShiftDown() != bLastPrecision)
+		if (ComputeSnapActive() != bLastSnapActive || M.IsShiftDown() != bLastShiftDown)
 		{
 			UpdateFromMouse();
 		}
@@ -246,9 +274,10 @@ bool FBlenderXformInputProcessor::HandleKeyDownEvent(FSlateApplication&, const F
 
 	if (Op.IsActive())
 	{
-		// Always let Cmd/Ctrl chords through, so system/editor shortcuts (Cmd+Z undo, Cmd+S save, ...)
-		// are never swallowed by an active op. Core to not breaking native UE.
-		if (InKeyEvent.IsCommandDown() || InKeyEvent.IsControlDown())
+		// Always let Cmd/Ctrl/Alt chords through, so system/editor shortcuts (Cmd+Z undo, Cmd+S save, our
+		// Alt+Shift+B toggle, ...) are never swallowed by an active op. Our modal keys never use these
+		// modifiers, so this is safe. Core to not breaking native UE.
+		if (InKeyEvent.IsCommandDown() || InKeyEvent.IsControlDown() || InKeyEvent.IsAltDown())
 		{
 			return false;
 		}

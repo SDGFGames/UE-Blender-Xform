@@ -4,6 +4,11 @@
 #include "ToolMenus.h"
 #include "Textures/SlateIcon.h"
 #include "Styling/AppStyle.h"
+#include "Framework/Commands/Commands.h"      // TCommands, UI_COMMAND
+#include "Framework/Commands/UICommandList.h" // MapAction / UnmapAction
+#include "Framework/Commands/InputChord.h"    // FInputChord, EModifierKey
+#include "InputCoreTypes.h"                    // EKeys
+#include "LevelEditor.h"                       // FLevelEditorModule (global command list)
 
 #include "BlenderXformInputProcessor.h"
 #include "BlenderXformHUD.h"
@@ -37,6 +42,30 @@ namespace
 	}
 }
 
+/** Editor commands for the plugin — currently just the on/off toggle (default Alt+Shift+B). */
+class FBlenderXformCommands : public TCommands<FBlenderXformCommands>
+{
+public:
+	FBlenderXformCommands()
+		: TCommands<FBlenderXformCommands>(
+			TEXT("BlenderXform"),
+			LOCTEXT("BlenderXformCommands", "Blender Transform"),
+			NAME_None,
+			FAppStyle::GetAppStyleSetName())
+	{
+	}
+
+	virtual void RegisterCommands() override
+	{
+		UI_COMMAND(ToggleEnabled, "Toggle Blender Transform",
+			"Enable/disable the Blender-style G/S/R transform shortcuts in the viewport",
+			EUserInterfaceActionType::ToggleButton,
+			FInputChord(EModifierKey::Alt | EModifierKey::Shift, EKeys::B));
+	}
+
+	TSharedPtr<FUICommandInfo> ToggleEnabled;
+};
+
 /**
  * Editor module for Blender-style transform shortcuts. Owns the Slate input pre-processor (the
  * modal G/S/R engine), the viewport HUD overlay, and a level-editor toolbar toggle bound to the
@@ -51,6 +80,8 @@ public:
 
 		if (FSlateApplication::IsInitialized())
 		{
+			FBlenderXformCommands::Register(); // toggle command (hotkey bound once the level editor is up)
+
 			InputProcessor = MakeShared<FBlenderXformInputProcessor>();
 			// Index 0 = first in line, so no other pre-processor (editor or plugin) can swallow our
 			// keys first — notably Escape, which on macOS was being consumed before we saw it.
@@ -130,6 +161,16 @@ public:
 		}
 		InputProcessor.Reset();
 
+		if (FBlenderXformCommands::IsRegistered())
+		{
+			if (FModuleManager::Get().IsModuleLoaded("LevelEditor"))
+			{
+				FLevelEditorModule& LevelEditor = FModuleManager::GetModuleChecked<FLevelEditorModule>("LevelEditor");
+				LevelEditor.GetGlobalLevelEditorActions()->UnmapAction(FBlenderXformCommands::Get().ToggleEnabled);
+			}
+			FBlenderXformCommands::Unregister();
+		}
+
 		FBlenderXformStyle::Shutdown();
 
 		UE_LOG(LogBlenderXform, Log, TEXT("[BlenderXform] shutdown"));
@@ -172,6 +213,24 @@ private:
 		Entry.SetCommandList(nullptr);
 
 		Section.AddEntry(Entry);
+
+		// Bind the keyboard shortcut (default Alt+Shift+B; rebindable in Editor Preferences ->
+		// Keyboard Shortcuts -> Blender Transform) into the level editor's global command list, which
+		// the viewport processes — so the toggle works from the 3D view. Mapped here, where the level
+		// editor is guaranteed loaded.
+		if (FBlenderXformCommands::IsRegistered())
+		{
+			FLevelEditorModule& LevelEditor = FModuleManager::LoadModuleChecked<FLevelEditorModule>("LevelEditor");
+			const TSharedRef<FUICommandList> Actions = LevelEditor.GetGlobalLevelEditorActions();
+			if (!Actions->IsActionMapped(FBlenderXformCommands::Get().ToggleEnabled))
+			{
+				Actions->MapAction(
+					FBlenderXformCommands::Get().ToggleEnabled,
+					FExecuteAction::CreateStatic(&ToggleXformEnabled),
+					FCanExecuteAction(),
+					FIsActionChecked::CreateStatic(&IsXformEnabled));
+			}
+		}
 	}
 
 	TSharedPtr<FBlenderXformInputProcessor> InputProcessor;

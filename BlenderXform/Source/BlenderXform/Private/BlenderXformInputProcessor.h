@@ -39,14 +39,15 @@ private:
 	void UpdateFromMouse();        // refresh tuning + deproject current cursor + feed the op
 	FXTuning BuildTuning(bool bSnap, bool bPrecision) const; // settings + live Ctrl(snap)/Shift(fine)
 	void RefreshTuningFromModifiers(); // read current Ctrl/Shift and push to the op (no key interception)
+	bool ComputeSnapActive() const;    // Ctrl held OR UE's per-mode grid-snap toggle on (for the op's mode)
 	bool EnsureViewCache(FLevelEditorViewportClient* VC); // (re)compute the scene view at most once per frame
 	FVector DeprojectToPlane(const FVector2D& Pixel, const FVector& PlanePt, const FVector& PlaneN) const;
 
 	FBlenderXformOp Op;
 	FXEditorSink Sink;
 	FVector2D StartPixel = FVector2D::ZeroVector;
-	bool bLastSnap = false;        // last modifier state seen, to re-apply on a stationary Ctrl/Shift change
-	bool bLastPrecision = false;
+	bool bLastSnapActive = false;  // last snap state (Ctrl || UE grid-snap toggle) + Shift, to re-apply
+	bool bLastShiftDown = false;   // on a stationary change (tap Ctrl, or flip the UE snap toggle)
 	FXTuning CachedBaseTuning;      // settings read once per op (modifiers patched in per move) — avoids per-move GetDefault
 
 	// Per-frame scene-view cache: CalcSceneView is rebuilt at most once per frame (and when the active

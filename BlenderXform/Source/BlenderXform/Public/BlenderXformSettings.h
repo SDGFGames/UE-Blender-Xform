@@ -31,17 +31,9 @@ public:
 	UPROPERTY(EditAnywhere, config, Category = "Feel", meta = (ClampMin = "0.01", ClampMax = "1.0"))
 	float PrecisionScale = 0.1f;
 
-	/** Hold Ctrl during a Move drag to snap translation to this grid (world units / cm). */
-	UPROPERTY(EditAnywhere, config, Category = "Snapping", meta = (ClampMin = "0.001"))
-	float MoveSnapInterval = 10.0f;
-
-	/** Hold Ctrl during a Rotate drag to snap the angle to this increment (degrees). */
-	UPROPERTY(EditAnywhere, config, Category = "Snapping", meta = (ClampMin = "0.1", ClampMax = "180.0"))
-	float RotateSnapInterval = 5.0f;
-
-	/** Hold Ctrl during a Scale drag to snap the factor to this increment. */
-	UPROPERTY(EditAnywhere, config, Category = "Snapping", meta = (ClampMin = "0.001", ClampMax = "1.0"))
-	float ScaleSnapInterval = 0.1f;
+	// Snap sizes are intentionally NOT settings here — they are bound to UE's viewport grid (Snap
+	// Settings dropdowns for translate/rotate/scale). Snapping engages when the matching UE grid-snap
+	// toggle is on, or when Ctrl is held (Blender on-demand snap).
 
 	virtual FName GetCategoryName() const override { return TEXT("Plugins"); }
 };

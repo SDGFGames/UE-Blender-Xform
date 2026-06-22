@@ -206,6 +206,7 @@ void FXEditorSink::Cancel()
 		if (AActor* Actor = Snap.Actor.Get())
 		{
 			Actor->SetActorTransform(Snap.Xform, false, nullptr, ETeleportType::TeleportPhysics);
+			Actor->PostEditMove(true); // restored to the original transform — finalize dependent visuals
 		}
 	}
 
@@ -213,6 +214,16 @@ void FXEditorSink::Cancel()
 	{
 		Transaction->Cancel(); // discard — nothing lands in the undo buffer
 		Transaction.Reset();
+	}
+
+	// Move the gizmo back onto the restored selection: the drag left UE's editor pivot at the
+	// dragged-to location, so without this the transform widget stays where the object was dragged
+	// instead of snapping back with it. (On the macOS Esc path DrainReselect's NoteSelectionChange also
+	// corrects it, but RMB-cancel — and any case where the native deselect doesn't fire — needs this.)
+	if (GUnrealEd)
+	{
+		GUnrealEd->SetPivotMovedIndependently(false);
+		GUnrealEd->UpdatePivotLocationForSelection();
 	}
 
 	// Blender keeps the selection after a cancel. On macOS the physical Escape that cancels us is
