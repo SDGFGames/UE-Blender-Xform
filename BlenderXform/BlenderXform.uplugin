@@ -1,0 +1,20 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1.0",
+	"FriendlyName": "Blender Transform Shortcuts",
+	"Description": "Blender-style modal G/S/R transforms (single-axis & plane constraints, Global/Local orientation, numeric entry) in the UE level viewport. Toggleable; leaves native UE shortcuts untouched when off.",
+	"Category": "Editor",
+	"CreatedBy": "UE-Blender-Xform",
+	"CanContainContent": false,
+	"IsBetaVersion": true,
+	"Installed": false,
+	"EnabledByDefault": true,
+	"Modules": [
+		{
+			"Name": "BlenderXform",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		}
+	]
+}
