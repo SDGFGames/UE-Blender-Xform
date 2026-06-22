@@ -23,6 +23,7 @@ public class BlenderXform : ModuleRules
 			"LevelEditor",       // level viewport access
 			"ToolMenus",         // toolbar toggle button
 			"DeveloperSettings", // UBlenderXformSettings
+			"Projects",          // IPluginManager — locate Resources/ for the toolbar icons
 		});
 
 		if (Target.Platform == UnrealTargetPlatform.Mac)

@@ -8,6 +8,7 @@
 #include "BlenderXformInputProcessor.h"
 #include "BlenderXformHUD.h"
 #include "BlenderXformSettings.h"
+#include "BlenderXformStyle.h"
 
 #define LOCTEXT_NAMESPACE "BlenderXform"
 
@@ -28,6 +29,11 @@ namespace
 			S->bEnabled = !S->bEnabled;
 			S->SaveConfig();
 		}
+		// Re-poll the toolbar button so its icon swaps on/off immediately.
+		if (UToolMenus* Menus = UToolMenus::Get())
+		{
+			Menus->RefreshAllWidgets();
+		}
 	}
 }
 
@@ -41,6 +47,8 @@ class FBlenderXformModule : public IModuleInterface
 public:
 	virtual void StartupModule() override
 	{
+		FBlenderXformStyle::Initialize();
+
 		if (FSlateApplication::IsInitialized())
 		{
 			InputProcessor = MakeShared<FBlenderXformInputProcessor>();
@@ -79,6 +87,8 @@ public:
 		}
 		InputProcessor.Reset();
 
+		FBlenderXformStyle::Shutdown();
+
 		UE_LOG(LogBlenderXform, Log, TEXT("[BlenderXform] shutdown"));
 	}
 
@@ -101,12 +111,21 @@ private:
 		Action.GetActionCheckState = FToolMenuGetActionCheckState::CreateLambda(
 			[](const FToolMenuContext&) { return IsXformEnabled() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; });
 
+		// Icon reflects on/off live: orange transform glyph when active, muted+slashed when off.
+		TAttribute<FSlateIcon> DynamicIcon = TAttribute<FSlateIcon>::Create(
+			TAttribute<FSlateIcon>::FGetter::CreateLambda([]()
+			{
+				return FSlateIcon(FBlenderXformStyle::GetStyleSetName(),
+					IsXformEnabled() ? "BlenderXform.ModeOn" : "BlenderXform.ModeOff");
+			}));
+
 		FToolMenuEntry Entry = FToolMenuEntry::InitToolBarButton(
 			"BlenderXformToggle",
 			FToolUIActionChoice(Action),
 			LOCTEXT("ToggleLabel", "Blender XForm"),
 			LOCTEXT("ToggleTip", "Toggle Blender-style G/S/R transform shortcuts in the viewport"),
-			FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Transform"));
+			DynamicIcon,
+			EUserInterfaceActionType::ToggleButton);
 		Entry.SetCommandList(nullptr);
 
 		Section.AddEntry(Entry);

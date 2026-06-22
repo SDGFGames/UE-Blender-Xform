@@ -42,6 +42,7 @@ public:
 	void CycleAxis(EXAxis Axis, bool bShiftPlane); // same axis re-press: Global -> Local -> Free
 	void PushDigit(TCHAR Ch);                      // 0-9, '.', '-' (toggles sign)
 	void Backspace();
+	void SetTuning(const FXTuning& InTuning);      // live feel knobs (sensitivity/precision/snap); re-applies
 	void UpdateFromScreen(const FVector& WorldStart, const FVector& WorldNow,
 	                      const FVector2D& PivotS, const FVector2D& StartS, const FVector2D& NowS,
 	                      const FVector& CamForward);
@@ -53,6 +54,7 @@ public:
 	const FXConstraint& Constraint() const { return Con; }
 	bool HasNumeric() const { return bHasNumeric; }
 	double NumericValue() const { return NumVal; }
+	const FXApplied& LastApplied() const { return Applied; }
 	FString HudString() const;
 
 private:
@@ -61,10 +63,15 @@ private:
 	void SetWorldBasis();
 	void SetLocalBasis();
 	void Recompute();
+	static double LargestScaleComponent(const FVector& F); // the component that departs most from 1
+
+
 
 	EXMode Mode = EXMode::None;
 	FXConstraint Con;
 	IXApplySink* Sink = nullptr;
+	FXTuning Tuning;        // live feel knobs fed by the input processor
+	FXApplied Applied;      // last preview pushed to the sink (for the HUD live read-out)
 
 	FString NumBuf;
 	bool bHasNumeric = false;

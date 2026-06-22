@@ -15,10 +15,13 @@ or plane, and confirm or cancel — exactly like Blender.
 - **Plane constraints** — `Shift+X` / `Shift+Y` / `Shift+Z` lock *out* that axis (transform in the other two).
 - **Global / Local** — press the same axis key again to toggle Global → Local → off (Local uses the active object's axes).
 - **Numeric entry** — type a value for an exact transform, e.g. `G X 5 Enter` moves +5 on X. Supports `.` and `-`.
+- **Snapping (`Ctrl`)** — hold **Ctrl** while dragging to snap: translate to a grid (default 10 uu), rotate to 5°, scale to 0.1 — exactly like Blender. Increments are configurable.
+- **Precision (`Shift`)** — hold **Shift** while dragging for fine, slowed control (default 0.1×).
+- **Adjustable feel** — `MouseSensitivity` / `RotateSensitivity` tune drag magnitude. (Typed values always stay exact, regardless of snap/sensitivity.)
 - **Confirm / Cancel** — **LMB or Enter** confirms; **RMB or Esc** cancels and restores.
 - **One undo step** — the whole operation is a single `Ctrl/Cmd+Z`.
-- **Viewport HUD** — shows the live state, e.g. `Move | X (local) | 5`.
-- **Non-destructive toggle** — a toolbar button (and `bEnabled` setting) turns it off; native UE shortcuts (`G` = Game View, `R` = Scale gizmo, …) come straight back.
+- **Viewport HUD** — shows the live state, e.g. `Move | X (local) | 5.00 [snap]`.
+- **Non-destructive toggle** — a toolbar button (and `bEnabled` setting) turns it off; native UE shortcuts (`G` = Game View, `R` = Scale gizmo, …) come straight back. **The toolbar icon reflects the state** — Blender-orange when on, muted/slashed when off.
 
 ## Keymap
 
@@ -27,9 +30,15 @@ or plane, and confirm or cancel — exactly like Blender.
 | `G` / `S` / `R` | Start Move / Scale / Rotate |
 | `X` / `Y` / `Z` | Constrain to that axis (press again → Local → off) |
 | `Shift`+`X`/`Y`/`Z` | Constrain to the plane perpendicular to that axis |
+| `Ctrl` (hold) | Snap to increments while dragging (grid / 5° / 0.1) |
+| `Shift` (hold) | Precision: fine, slowed dragging |
 | `0-9` `.` `-` | Type an exact value |
 | `Enter` / `LMB` | Confirm |
 | `Esc` / `RMB` | Cancel (restores; keeps the selection) |
+
+Snap increments and sensitivity live under *Editor Preferences → Plugins → Blender Transform Shortcuts* (categories **Feel** and **Snapping**).
+
+> **Note on `Shift`:** `Shift`+an axis *key* sets a plane constraint; `Shift` *held during the drag* is precision. They compose — e.g. `S Shift+Z` then keep holding Shift to fine-scale in the XY plane.
 
 ## Install
 

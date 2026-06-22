@@ -80,6 +80,51 @@ bool FBlenderXformOpAxisCycleTest::RunTest(const FString&)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformOpTuningTest, "BlenderXform.Op.Tuning",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FBlenderXformOpTuningTest::RunTest(const FString&)
+{
+	// Sensitivity flows through the modal path: G X, 2x sensitivity, drag 5 -> 10.
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Move, S);
+		Op.CycleAxis(EXAxis::X, false);
+		FXTuning T; T.MouseSensitivity = 2.0;
+		Op.SetTuning(T);
+		Op.UpdateFromScreen(FVector::ZeroVector, FVector(5, 0, 0),
+			FVector2D::ZeroVector, FVector2D::ZeroVector, FVector2D::ZeroVector, FVector(0, 0, -1));
+		TestTrue(TEXT("sensitivity doubles the drag"), S.Last().MoveDelta.Equals(FVector(10, 0, 0), 1e-3));
+	}
+
+	// Ctrl-snap flows through: free drag (12,7,-16) on a 10 grid -> (10,10,-20).
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Move, S);
+		FXTuning T; T.bSnap = true; T.MoveSnap = 10.0;
+		Op.SetTuning(T);
+		Op.UpdateFromScreen(FVector::ZeroVector, FVector(12, 7, -16),
+			FVector2D::ZeroVector, FVector2D::ZeroVector, FVector2D::ZeroVector, FVector(0, 0, -1));
+		TestTrue(TEXT("snap quantizes the modal move"), S.Last().MoveDelta.Equals(FVector(10, 10, -20), 1e-3));
+	}
+
+	// Typed value stays exact even with loud tuning set.
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Move, S);
+		Op.CycleAxis(EXAxis::X, false);
+		FXTuning T; T.MouseSensitivity = 9.0; T.bSnap = true; T.MoveSnap = 7.0;
+		Op.SetTuning(T);
+		Op.PushDigit(TEXT('5'));
+		Op.Commit();
+		TestTrue(TEXT("numeric ignores tuning"), S.Last().MoveDelta.Equals(FVector(5, 0, 0), 1e-3));
+	}
+
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformOpScaleRotateTest, "BlenderXform.Op.ScaleAndRotate",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FBlenderXformOpScaleRotateTest::RunTest(const FString&)

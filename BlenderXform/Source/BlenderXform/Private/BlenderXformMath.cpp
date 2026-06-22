@@ -1,5 +1,14 @@
 #include "BlenderXformMath.h"
 
+namespace
+{
+	/** Round to the nearest multiple of Step (no-op for non-positive Step). */
+	double SnapTo(double Value, double Step)
+	{
+		return (Step > KINDA_SMALL_NUMBER) ? FMath::GridSnap(Value, Step) : Value;
+	}
+}
+
 FVector FBlenderXformMath::ConstrainVector(const FVector& V, const FXConstraint& C)
 {
 	if (C.Axis == EXAxis::Free)
@@ -18,11 +27,13 @@ FVector FBlenderXformMath::ConstrainVector(const FVector& V, const FXConstraint&
 }
 
 FVector FBlenderXformMath::MoveDelta(const FVector& WorldStart, const FVector& WorldNow,
-                                     const FXConstraint& C, bool bNumeric, double NumericValue)
+                                     const FXConstraint& C, bool bNumeric, double NumericValue,
+                                     const FXTuning& T)
 {
 	if (bNumeric)
 	{
 		// Numeric move needs a single axis to give a direction (e.g. G X 5). Free/plane numeric is a no-op.
+		// Exact: feel knobs never touch typed values.
 		if (C.Axis != EXAxis::Free && !C.bPlane)
 		{
 			return NumericValue * C.AxisDir().GetSafeNormal();
@@ -30,22 +41,61 @@ FVector FBlenderXformMath::MoveDelta(const FVector& WorldStart, const FVector& W
 		return FVector::ZeroVector;
 	}
 
-	return ConstrainVector(WorldNow - WorldStart, C);
+	const FVector Raw = (WorldNow - WorldStart) * T.MoveGain();
+
+	if (!T.bSnap)
+	{
+		return ConstrainVector(Raw, C);
+	}
+
+	// Snap along the constraint so Local snapping follows the rotated basis (not world axes).
+	if (C.Axis == EXAxis::Free)
+	{
+		return FVector(SnapTo(Raw.X, T.MoveSnap), SnapTo(Raw.Y, T.MoveSnap), SnapTo(Raw.Z, T.MoveSnap));
+	}
+
+	const FVector BX = C.BX.GetSafeNormal();
+	const FVector BY = C.BY.GetSafeNormal();
+	const FVector BZ = C.BZ.GetSafeNormal();
+
+	if (!C.bPlane)
+	{
+		const FVector Dir = C.AxisDir().GetSafeNormal();
+		if (Dir.IsNearlyZero())
+		{
+			return ConstrainVector(Raw, C);
+		}
+		return SnapTo(FVector::DotProduct(Raw, Dir), T.MoveSnap) * Dir;
+	}
+
+	// Plane: keep the two free basis axes, snap each, drop the locked one.
+	const double CX = (C.Axis == EXAxis::X) ? 0.0 : SnapTo(FVector::DotProduct(Raw, BX), T.MoveSnap);
+	const double CY = (C.Axis == EXAxis::Y) ? 0.0 : SnapTo(FVector::DotProduct(Raw, BY), T.MoveSnap);
+	const double CZ = (C.Axis == EXAxis::Z) ? 0.0 : SnapTo(FVector::DotProduct(Raw, BZ), T.MoveSnap);
+	return CX * BX + CY * BY + CZ * BZ;
 }
 
 FVector FBlenderXformMath::ScaleFactors(const FVector2D& PivotS, const FVector2D& StartS, const FVector2D& NowS,
-                                        const FXConstraint& C, bool bNumeric, double NumericValue)
+                                        const FXConstraint& C, bool bNumeric, double NumericValue,
+                                        const FXTuning& T)
 {
 	double F;
 	if (bNumeric)
 	{
-		F = NumericValue;
+		F = NumericValue; // exact
 	}
 	else
 	{
 		const double D0 = FVector2D::Distance(StartS, PivotS);
 		const double D1 = FVector2D::Distance(NowS, PivotS);
-		F = (D0 > KINDA_SMALL_NUMBER) ? (D1 / D0) : 1.0;
+		double Raw = (D0 > KINDA_SMALL_NUMBER) ? (D1 / D0) : 1.0;
+		// Sensitivity/precision scale how fast the factor departs from 1; snap quantizes it.
+		Raw = 1.0 + (Raw - 1.0) * T.MoveGain();
+		F = T.bSnap ? SnapTo(Raw, T.ScaleSnap) : Raw;
+		// A mouse drag must never collapse to zero or mirror-flip — Blender only flips on a typed
+		// negative (the bNumeric path above). Floor at one snap step when snapping (keeps a clean
+		// increment), else a tiny epsilon (lets the object scale arbitrarily small but stay valid).
+		F = FMath::Max(F, T.bSnap ? T.ScaleSnap : KINDA_SMALL_NUMBER);
 	}
 
 	FVector Out(1.0, 1.0, 1.0);
@@ -75,11 +125,12 @@ FVector FBlenderXformMath::ScaleFactors(const FVector2D& PivotS, const FVector2D
 
 double FBlenderXformMath::RotateAngleDeg(const FVector2D& PivotS, const FVector2D& StartS, const FVector2D& NowS,
                                          const FVector& AxisWorld, const FVector& CamForward,
-                                         bool bNumeric, double NumericValue)
+                                         bool bNumeric, double NumericValue,
+                                         const FXTuning& T)
 {
 	if (bNumeric)
 	{
-		return NumericValue;
+		return NumericValue; // exact
 	}
 
 	const FVector2D A = StartS - PivotS;
@@ -103,6 +154,13 @@ double FBlenderXformMath::RotateAngleDeg(const FVector2D& PivotS, const FVector2
 	if (Facing > 0.0)
 	{
 		Delta = -Delta;
+	}
+
+	// Sensitivity/precision scale the sweep; snap quantizes to fixed increments (Blender Ctrl=5deg).
+	Delta *= T.RotGain();
+	if (T.bSnap)
+	{
+		Delta = SnapTo(Delta, T.RotateSnapDeg);
 	}
 
 	return Delta;

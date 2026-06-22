@@ -35,9 +35,13 @@ private:
 	bool IsEnabled() const;
 	bool CanStartHere() const;     // enabled + cursor over the active level viewport + has selection
 	void CaptureStartCursor();     // record the pixel where the op began
-	void UpdateFromMouse();        // deproject current cursor + feed the op
+	void UpdateFromMouse();        // refresh tuning + deproject current cursor + feed the op
+	FXTuning BuildTuning(bool bSnap, bool bPrecision) const; // settings + live Ctrl(snap)/Shift(fine)
+	void RefreshTuningFromModifiers(); // read current Ctrl/Shift and push to the op (no key interception)
 
 	FBlenderXformOp Op;
 	FXEditorSink Sink;
 	FVector2D StartPixel = FVector2D::ZeroVector;
+	bool bLastSnap = false;        // last modifier state seen, to re-apply on a stationary Ctrl/Shift change
+	bool bLastPrecision = false;
 };

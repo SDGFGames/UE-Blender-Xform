@@ -2,6 +2,7 @@
 #include "BlenderXformSettings.h"
 
 #include "Framework/Application/SlateApplication.h"
+#include "GenericPlatform/GenericApplicationMessageHandler.h" // FModifierKeysState
 #include "Input/Events.h"
 #include "InputCoreTypes.h"
 #include "LevelEditorViewport.h"
@@ -100,6 +101,33 @@ void FBlenderXformInputProcessor::CaptureStartCursor()
 	UpdateFromMouse();
 }
 
+FXTuning FBlenderXformInputProcessor::BuildTuning(bool bSnap, bool bPrecision) const
+{
+	FXTuning T;
+	if (const UBlenderXformSettings* S = GetDefault<UBlenderXformSettings>())
+	{
+		T.MouseSensitivity  = S->MouseSensitivity;
+		T.RotateSensitivity = S->RotateSensitivity;
+		T.PrecisionScale    = S->PrecisionScale;
+		T.MoveSnap          = S->MoveSnapInterval;
+		T.RotateSnapDeg     = S->RotateSnapInterval;
+		T.ScaleSnap         = S->ScaleSnapInterval;
+	}
+	T.bSnap = bSnap;
+	T.bPrecision = bPrecision;
+	return T;
+}
+
+void FBlenderXformInputProcessor::RefreshTuningFromModifiers()
+{
+	// Blender semantics: Ctrl = snap, Shift = fine. We only READ the modifier state here; we never
+	// consume Ctrl/Shift key events, so Cmd/Ctrl+Z, Shift+axis (plane), etc. are all untouched.
+	const FModifierKeysState M = FSlateApplication::Get().GetModifierKeys();
+	bLastSnap = M.IsControlDown();
+	bLastPrecision = M.IsShiftDown();
+	Op.SetTuning(BuildTuning(bLastSnap, bLastPrecision));
+}
+
 void FBlenderXformInputProcessor::UpdateFromMouse()
 {
 	FLevelEditorViewportClient* VC = ActiveLevelViewport();
@@ -107,6 +135,8 @@ void FBlenderXformInputProcessor::UpdateFromMouse()
 	{
 		return;
 	}
+
+	RefreshTuningFromModifiers();
 
 	const FVector2D NowPixel = ViewportMousePixel(VC);
 
@@ -143,6 +173,17 @@ void FBlenderXformInputProcessor::Tick(const float, FSlateApplication&, TSharedR
 	{
 		Op.Cancel();
 		return;
+	}
+
+	// Re-apply snapping/precision the instant Ctrl/Shift is pressed or released, even with a still
+	// cursor (Blender lets you tap Ctrl mid-op to snap in place). Only fires on a state change, so
+	// the steady-state per-frame cost stays nil.
+	{
+		const FModifierKeysState M = FSlateApplication::Get().GetModifierKeys();
+		if (M.IsControlDown() != bLastSnap || M.IsShiftDown() != bLastPrecision)
+		{
+			UpdateFromMouse();
+		}
 	}
 
 #if PLATFORM_MAC

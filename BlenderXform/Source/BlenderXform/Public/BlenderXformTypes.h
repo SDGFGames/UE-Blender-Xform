@@ -40,3 +40,29 @@ struct FXConstraint
 
 	bool HasConstraint() const { return Axis != EXAxis::Free; }
 };
+
+/**
+ * Live feel knobs that modulate ONLY mouse-driven magnitude (numeric entry stays exact, as in
+ * Blender). The pure math takes this by const-ref so the modal feel is fully unit-testable.
+ *   - Sensitivity scales how far a drag moves/rotates (translate & scale share MouseSensitivity).
+ *   - bPrecision (Shift held) multiplies by PrecisionScale for fine control.
+ *   - bSnap (Ctrl held) quantizes the result: MoveSnap (world units), RotateSnapDeg, ScaleSnap.
+ * Default-constructed = identity (sensitivity 1, no precision, no snap) => zero behavior change,
+ * so existing callers/tests are unaffected.
+ */
+struct FXTuning
+{
+	double MouseSensitivity  = 1.0;  // translate + scale drag gain
+	double RotateSensitivity = 1.0;  // rotate drag gain
+	bool   bPrecision        = false;
+	double PrecisionScale    = 0.1;  // Shift: 10x finer
+	bool   bSnap             = false;
+	double MoveSnap          = 10.0; // world units (cm) per step
+	double RotateSnapDeg     = 5.0;  // degrees per step (Blender default)
+	double ScaleSnap         = 0.1;  // factor increment per step
+
+	/** Combined mouse gain for translate/scale (sensitivity, optionally fined by precision). */
+	double MoveGain() const  { return MouseSensitivity  * (bPrecision ? PrecisionScale : 1.0); }
+	/** Combined mouse gain for rotate. */
+	double RotGain() const   { return RotateSensitivity * (bPrecision ? PrecisionScale : 1.0); }
+};

@@ -101,6 +101,14 @@ void FBlenderXformOp::Backspace()
 	Recompute();
 }
 
+void FBlenderXformOp::SetTuning(const FXTuning& InTuning)
+{
+	// Plain store: the caller always follows with a mouse/numeric update that recomputes once, so the
+	// hot per-mouse-move path stays single-apply. (The processor re-feeds the cursor when only a
+	// modifier changed, so Ctrl/Shift toggles still re-apply.)
+	Tuning = InTuning;
+}
+
 void FBlenderXformOp::UpdateFromScreen(const FVector& WorldStart, const FVector& WorldNow,
                                        const FVector2D& PivotS, const FVector2D& StartS, const FVector2D& NowS,
                                        const FVector& CamForward)
@@ -174,10 +182,35 @@ FString FBlenderXformOp::HudString() const
 
 	if (!NumBuf.IsEmpty())
 	{
+		// Typed value (exact). Show the buffer as-is so a trailing '.' or '-' is visible while typing.
 		S += FString::Printf(TEXT(" | %s"), *NumBuf);
 	}
+	else
+	{
+		// Live mouse-driven value, Blender-style (distance / factor / degrees).
+		switch (Mode)
+		{
+			case EXMode::Move:   S += FString::Printf(TEXT(" | %.2f"), Applied.MoveDelta.Size()); break;
+			case EXMode::Scale:  S += FString::Printf(TEXT(" | x%.3f"), LargestScaleComponent(Applied.ScaleFac)); break;
+			case EXMode::Rotate: S += FString::Printf(TEXT(" | %.1f deg"), Applied.RotDeg); break;
+			default: break;
+		}
+	}
+
+	if (Tuning.bSnap)      { S += TEXT(" [snap]"); }
+	if (Tuning.bPrecision) { S += TEXT(" [fine]"); }
 
 	return S;
+}
+
+double FBlenderXformOp::LargestScaleComponent(const FVector& F)
+{
+	// The active scale factor is whichever component departs most from 1 (others are held at 1).
+	const double DX = FMath::Abs(F.X - 1.0);
+	const double DY = FMath::Abs(F.Y - 1.0);
+	const double DZ = FMath::Abs(F.Z - 1.0);
+	if (DX >= DY && DX >= DZ) { return F.X; }
+	return (DY >= DZ) ? F.Y : F.Z;
 }
 
 void FBlenderXformOp::Reset()
@@ -188,6 +221,8 @@ void FBlenderXformOp::Reset()
 	bHasNumeric = false;
 	NumVal = 0.0;
 	Sink = nullptr;
+	Applied = FXApplied();
+	// Tuning intentionally persists across ops; it is owned/refreshed by the input processor.
 }
 
 void FBlenderXformOp::ParseNumeric()
@@ -233,21 +268,22 @@ void FBlenderXformOp::Recompute()
 	switch (Mode)
 	{
 		case EXMode::Move:
-			A.MoveDelta = FBlenderXformMath::MoveDelta(LastWorldStart, LastWorldNow, Con, bHasNumeric, NumVal);
+			A.MoveDelta = FBlenderXformMath::MoveDelta(LastWorldStart, LastWorldNow, Con, bHasNumeric, NumVal, Tuning);
 			break;
 		case EXMode::Scale:
-			A.ScaleFac = FBlenderXformMath::ScaleFactors(LastPivotS, LastStartS, LastNowS, Con, bHasNumeric, NumVal);
+			A.ScaleFac = FBlenderXformMath::ScaleFactors(LastPivotS, LastStartS, LastNowS, Con, bHasNumeric, NumVal, Tuning);
 			break;
 		case EXMode::Rotate:
 		{
 			const FVector Axis = Con.HasConstraint() ? Con.AxisDir() : LastCamFwd;
 			A.RotAxis = Axis.GetSafeNormal();
-			A.RotDeg = FBlenderXformMath::RotateAngleDeg(LastPivotS, LastStartS, LastNowS, A.RotAxis, LastCamFwd, bHasNumeric, NumVal);
+			A.RotDeg = FBlenderXformMath::RotateAngleDeg(LastPivotS, LastStartS, LastNowS, A.RotAxis, LastCamFwd, bHasNumeric, NumVal, Tuning);
 			break;
 		}
 		default:
 			break;
 	}
 
+	Applied = A;
 	Sink->Apply(A);
 }
