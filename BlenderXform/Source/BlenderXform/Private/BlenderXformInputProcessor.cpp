@@ -8,6 +8,13 @@
 #include "SceneView.h"
 #include "UnrealClient.h"
 
+#if PLATFORM_MAC
+// Read the hardware Escape key directly; macOS can consume it before any input pre-processor.
+THIRD_PARTY_INCLUDES_START
+#include <CoreGraphics/CGEventSource.h>
+THIRD_PARTY_INCLUDES_END
+#endif
+
 namespace
 {
 	/** Map a key to the digit/sign/dot char it represents for numeric entry, or 0 if it isn't one. */
@@ -125,12 +132,28 @@ void FBlenderXformInputProcessor::UpdateFromMouse()
 
 void FBlenderXformInputProcessor::Tick(const float, FSlateApplication&, TSharedRef<ICursor>)
 {
+	if (!Op.IsActive())
+	{
+		return;
+	}
+
 	// Safety: never leave an op stranded (which would swallow all input). If the toggle went off or
 	// the viewport vanished mid-op, cancel and hand control back to UE.
-	if (Op.IsActive() && (!IsEnabled() || !ActiveLevelViewport()))
+	if (!IsEnabled() || !ActiveLevelViewport())
+	{
+		Op.Cancel();
+		return;
+	}
+
+#if PLATFORM_MAC
+	// Physical Escape is unreliable through Slate on macOS (it can be consumed before any input
+	// pre-processor sees it), so poll the hardware key state every frame — Blender's Esc-to-cancel.
+	// kVK_Escape == 53.
+	if (CGEventSourceKeyState(kCGEventSourceStateCombinedSessionState, (CGKeyCode)53))
 	{
 		Op.Cancel();
 	}
+#endif
 }
 
 bool FBlenderXformInputProcessor::HandleKeyDownEvent(FSlateApplication&, const FKeyEvent& InKeyEvent)

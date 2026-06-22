@@ -24,5 +24,12 @@ public class BlenderXform : ModuleRules
 			"ToolMenus",         // toolbar toggle button
 			"DeveloperSettings", // UBlenderXformSettings
 		});
+
+		if (Target.Platform == UnrealTargetPlatform.Mac)
+		{
+			// CGEventSourceKeyState — poll the hardware Escape key, which macOS can route away from
+			// Slate input pre-processors before the plugin sees it.
+			PublicFrameworks.Add("CoreGraphics");
+		}
 	}
 }
