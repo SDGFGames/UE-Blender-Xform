@@ -57,10 +57,53 @@ public:
 			FSlateApplication::Get().RegisterInputPreProcessor(InputProcessor, 0);
 
 			FBlenderXformInputProcessor* Proc = InputProcessor.Get();
-			HUD = MakeUnique<FBlenderXformHUD>([Proc]() -> FString
-			{
-				return (Proc && Proc->GetOp().IsActive()) ? Proc->GetOp().HudString() : FString();
-			});
+			HUD = MakeUnique<FBlenderXformHUD>(
+				[Proc]() -> FString
+				{
+					return (Proc && Proc->GetOp().IsActive()) ? Proc->GetOp().HudString() : FString();
+				},
+				[Proc]() -> FXAxisOverlay
+				{
+					FXAxisOverlay O;
+					if (!Proc || !Proc->GetOp().IsActive())
+					{
+						return O;
+					}
+					const FBlenderXformOp& Op = Proc->GetOp();
+					const FXConstraint& C = Op.Constraint();
+					if (!C.HasConstraint())
+					{
+						return O; // Free: no constraint line (Blender shows none either)
+					}
+
+					auto AxisColor = [](EXAxis Ax) -> FLinearColor
+					{
+						switch (Ax)
+						{
+							case EXAxis::X: return FLinearColor(0.90f, 0.20f, 0.20f); // red
+							case EXAxis::Y: return FLinearColor(0.40f, 0.80f, 0.20f); // green
+							case EXAxis::Z: return FLinearColor(0.25f, 0.50f, 0.95f); // blue
+							default:        return FLinearColor::White;
+						}
+					};
+
+					O.bActive = true;
+					O.Pivot = Op.LastApplied().Pivot;
+
+					if (!C.bPlane)
+					{
+						O.Dirs.Add(C.AxisDir().GetSafeNormal());
+						O.Colors.Add(AxisColor(C.Axis));
+					}
+					else
+					{
+						// plane: draw the two axes that remain free (the locked one is omitted)
+						if (C.Axis != EXAxis::X) { O.Dirs.Add(C.BX.GetSafeNormal()); O.Colors.Add(AxisColor(EXAxis::X)); }
+						if (C.Axis != EXAxis::Y) { O.Dirs.Add(C.BY.GetSafeNormal()); O.Colors.Add(AxisColor(EXAxis::Y)); }
+						if (C.Axis != EXAxis::Z) { O.Dirs.Add(C.BZ.GetSafeNormal()); O.Colors.Add(AxisColor(EXAxis::Z)); }
+					}
+					return O;
+				});
 			HUD->Register();
 
 			UE_LOG(LogBlenderXform, Log, TEXT("[BlenderXform] input pre-processor + HUD registered"));

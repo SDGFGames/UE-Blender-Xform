@@ -1,6 +1,9 @@
 #include "BlenderXformEditorSink.h"
+#include "BlenderXformMath.h" // FBlenderXformMath::ScaleTransform
 
 #include "Editor.h"
+#include "Editor/UnrealEdEngine.h" // UUnrealEdEngine::UpdatePivotLocationForSelection
+#include "UnrealEdGlobals.h"       // GUnrealEd
 #include "Selection.h"
 #include "GameFramework/Actor.h"
 #include "Components/SceneComponent.h"
@@ -36,10 +39,30 @@ void FXEditorSink::CaptureSelection()
 	}
 
 	CachedPivot = (Count > 0) ? (Sum / Count) : FVector::ZeroVector;
+
+	// Snapshot the active actor's local axes now (op start) so a Local constraint stays put even as
+	// this op rotates the actor — reading GetActorQuat() live would drift mid-op.
+	ActiveBX = FVector::ForwardVector;
+	ActiveBY = FVector::RightVector;
+	ActiveBZ = FVector::UpVector;
+	if (GEditor)
+	{
+		if (AActor* Active = GEditor->GetSelectedActors()->GetTop<AActor>())
+		{
+			const FQuat Q = Active->GetActorQuat();
+			ActiveBX = Q.GetAxisX();
+			ActiveBY = Q.GetAxisY();
+			ActiveBZ = Q.GetAxisZ();
+		}
+	}
 }
 
 void FXEditorSink::Begin()
 {
+	// A fresh op supersedes any still-pending re-selection from a previous cancel.
+	PendingReselect.Reset();
+	ReselectTicksLeft = 0;
+
 	CaptureSelection();
 	Transaction = MakeUnique<FScopedTransaction>(LOCTEXT("XformTransaction", "Blender Transform"));
 	for (const FSnap& Snap : Snapshot)
@@ -80,10 +103,10 @@ void FXEditorSink::Apply(const FXApplied& In)
 			}
 			case EXMode::Scale:
 			{
-				const FVector F = In.ScaleFac;
-				const FVector Rel = Snap.Xform.GetLocation() - P;
-				T.SetLocation(P + FVector(Rel.X * F.X, Rel.Y * F.Y, Rel.Z * F.Z));
-				T.SetScale3D(Snap.Xform.GetScale3D() * F);
+				// World-space scale about the pivot (built from the constraint frame), so a Global
+				// single-axis scale follows the world axis even on a rotated actor; Local follows the
+				// actor's own axes. Replaces the old component-wise Scale3D multiply (always local).
+				T = FBlenderXformMath::ScaleTransform(Snap.Xform, P, In.ScaleMat);
 				break;
 			}
 			case EXMode::Rotate:
@@ -99,6 +122,18 @@ void FXEditorSink::Apply(const FXApplied& In)
 		}
 
 		Actor->SetActorTransform(T, false, nullptr, ETeleportType::TeleportPhysics);
+	}
+
+	// Make the editor's transform gizmo follow the selection live during the drag. The widget draws
+	// at FEditorModeTools::PivotLocation — a cached value that only refreshes on a selection change —
+	// so we re-seat it each Apply. UpdatePivotLocationForSelection re-reads the current actor
+	// transforms and fires no selection delegates / Details-panel refresh (unlike NoteSelectionChange),
+	// so it's cheap enough for the per-mouse-move path; it's also exactly what UE itself calls at the
+	// end of its own drags, so the gizmo doesn't jump again on Commit.
+	if (GUnrealEd)
+	{
+		GUnrealEd->SetPivotMovedIndependently(false);
+		GUnrealEd->UpdatePivotLocationForSelection();
 	}
 
 	if (GEditor)
@@ -137,28 +172,74 @@ void FXEditorSink::Cancel()
 		Transaction.Reset();
 	}
 
-	// The physical Escape that cancels us also fires UE's native "deselect all" (it reaches UE
-	// outside our pre-processor, so we can't swallow it). Blender keeps the selection after a
-	// cancel, so re-assert exactly the actors we were transforming. RMB-cancel doesn't need this
-	// (we consume that event), but re-selecting an already-selected set is harmless.
-	if (GEditor)
+	// Blender keeps the selection after a cancel. On macOS the physical Escape that cancels us is
+	// detected by a hardware poll in the processor's Tick, which runs BEFORE Slate pumps key events
+	// that frame — so UE's native Escape->"SELECT NONE" (bound on the level viewport) deselects our
+	// actors AFTER we cancel, and an immediate re-select here loses the race. Instead, queue the
+	// actors and re-assert them over the next few frames from the processor's Tick (DrainReselect),
+	// which lands after the native deselect. RMB-cancel consumes its own event (no native deselect),
+	// so DrainReselect just sees them still selected and does nothing.
+	PendingReselect.Reset();
+	for (const FSnap& Snap : Snapshot)
 	{
-		GEditor->SelectNone(/*bNoteSelectionChange*/ false, /*bDeselectBSPSurfs*/ true);
-		for (const FSnap& Snap : Snapshot)
+		if (AActor* Actor = Snap.Actor.Get())
 		{
-			if (AActor* Actor = Snap.Actor.Get())
-			{
-				GEditor->SelectActor(Actor, /*bInSelected*/ true, /*bNotify*/ false);
-			}
+			PendingReselect.Add(Actor);
 		}
-		GEditor->NoteSelectionChange();
 	}
+	ReselectTicksLeft = 3;
 
 	Snapshot.Reset();
 
 	if (GEditor)
 	{
 		GEditor->RedrawLevelEditingViewports();
+	}
+}
+
+void FXEditorSink::DrainReselect()
+{
+	if (ReselectTicksLeft <= 0)
+	{
+		return;
+	}
+	--ReselectTicksLeft;
+
+	if (GEditor)
+	{
+		USelection* Sel = GEditor->GetSelectedActors();
+
+		// Only re-assert if UE's native Escape-deselect actually dropped our actors. Checking first
+		// avoids needless Details-panel churn on the common path (RMB-cancel, or an Escape we already
+		// consumed) where nothing was deselected.
+		bool bAllSelected = (Sel != nullptr);
+		for (const TWeakObjectPtr<AActor>& Weak : PendingReselect)
+		{
+			AActor* Actor = Weak.Get();
+			if (Actor && (!Sel || !Sel->IsSelected(Actor)))
+			{
+				bAllSelected = false;
+				break;
+			}
+		}
+
+		if (!bAllSelected)
+		{
+			GEditor->SelectNone(/*bNoteSelectionChange*/ false, /*bDeselectBSPSurfs*/ true);
+			for (const TWeakObjectPtr<AActor>& Weak : PendingReselect)
+			{
+				if (AActor* Actor = Weak.Get())
+				{
+					GEditor->SelectActor(Actor, /*bInSelected*/ true, /*bNotify*/ false);
+				}
+			}
+			GEditor->NoteSelectionChange();
+		}
+	}
+
+	if (ReselectTicksLeft <= 0)
+	{
+		PendingReselect.Reset();
 	}
 }
 
@@ -169,20 +250,60 @@ FVector FXEditorSink::Pivot() const
 
 void FXEditorSink::ActiveBasis(FVector& X, FVector& Y, FVector& Z) const
 {
-	X = FVector::ForwardVector;
-	Y = FVector::RightVector;
-	Z = FVector::UpVector;
+	// Return the basis snapshotted at op start (see CaptureSelection), not the live actor rotation.
+	X = ActiveBX;
+	Y = ActiveBY;
+	Z = ActiveBZ;
+}
 
-	if (GEditor)
+void FXEditorSink::ClearComponent(EXMode Mode)
+{
+	if (!GEditor || !HasSelection())
 	{
-		if (AActor* Active = GEditor->GetSelectedActors()->GetTop<AActor>())
-		{
-			const FQuat Q = Active->GetActorQuat();
-			X = Q.GetAxisX();
-			Y = Q.GetAxisY();
-			Z = Q.GetAxisZ();
-		}
+		return;
 	}
+
+	FScopedTransaction Tx(LOCTEXT("XformClear", "Blender Clear Transform"));
+
+	bool bAny = false;
+	for (FSelectionIterator It(*GEditor->GetSelectedActors()); It; ++It)
+	{
+		AActor* Actor = Cast<AActor>(*It);
+		if (!Actor)
+		{
+			continue;
+		}
+		Actor->Modify();
+		if (USceneComponent* Root = Actor->GetRootComponent())
+		{
+			Root->Modify();
+		}
+
+		FTransform T = Actor->GetActorTransform();
+		switch (Mode)
+		{
+			case EXMode::Move:   T.SetLocation(FVector::ZeroVector); break; // Alt+G
+			case EXMode::Scale:  T.SetScale3D(FVector::OneVector);   break; // Alt+S
+			case EXMode::Rotate: T.SetRotation(FQuat::Identity);     break; // Alt+R
+			default: break;
+		}
+		Actor->SetActorTransform(T, false, nullptr, ETeleportType::TeleportPhysics);
+		bAny = true;
+	}
+
+	if (!bAny)
+	{
+		Tx.Cancel();
+		return;
+	}
+
+	if (GUnrealEd)
+	{
+		GUnrealEd->SetPivotMovedIndependently(false);
+		GUnrealEd->UpdatePivotLocationForSelection();
+	}
+	GEditor->NoteSelectionChange();
+	GEditor->RedrawLevelEditingViewports();
 }
 
 #undef LOCTEXT_NAMESPACE

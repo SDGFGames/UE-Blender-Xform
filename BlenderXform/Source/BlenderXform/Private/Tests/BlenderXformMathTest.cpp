@@ -196,4 +196,52 @@ bool FBlenderXformMathTuningScaleRotateTest::RunTest(const FString&)
 	return true;
 }
 
+// --- World-space scale matrix: Global vs Local single-axis scale on rotated objects. ---
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformMathScaleAxisTest, "BlenderXform.Math.ScaleAxisFrame",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FBlenderXformMathScaleAxisTest::RunTest(const FString&)
+{
+	// ScaleMatrix: global single-axis on the world frame is a plain diagonal scale.
+	FXConstraint GX; GX.Axis = EXAxis::X; // world basis (defaults)
+	const FMatrix MG = FBlenderXformMath::ScaleMatrix(GX, 2.0);
+	TestTrue(TEXT("global X scales world X only"),
+		MG.TransformVector(FVector(1, 1, 1)).Equals(FVector(2, 1, 1), 1e-3));
+
+	// A Local frame whose X points along world +Y must scale along world Y, not world X.
+	FXConstraint LX; LX.Axis = EXAxis::X; LX.Orient = EXOrient::Local;
+	LX.BX = FVector(0, 1, 0); LX.BY = FVector(-1, 0, 0); LX.BZ = FVector(0, 0, 1); // 90 deg about Z
+	const FMatrix ML = FBlenderXformMath::ScaleMatrix(LX, 2.0);
+	TestTrue(TEXT("local X (along world Y) scales world Y"),
+		ML.TransformVector(FVector(0, 3, 0)).Equals(FVector(0, 6, 0), 1e-3));
+	TestTrue(TEXT("local X leaves world X"),
+		ML.TransformVector(FVector(4, 0, 0)).Equals(FVector(4, 0, 0), 1e-3));
+
+	// ScaleTransform: the pivot offset scales; identity rotation gives a plain Scale3D.
+	const FTransform Off(FQuat::Identity, FVector(10, 0, 0), FVector::OneVector);
+	const FTransform OffOut = FBlenderXformMath::ScaleTransform(Off, FVector::ZeroVector, MG);
+	TestTrue(TEXT("pivot offset doubles along X"), OffOut.GetLocation().Equals(FVector(20, 0, 0), 1e-3));
+	TestTrue(TEXT("identity-rot X scale -> scale3D (2,1,1)"), OffOut.GetScale3D().Equals(FVector(2, 1, 1), 1e-3));
+
+	// The feature: Global vs Local single-axis scale on a ROTATED actor (90 deg about Z: +X->+Y, +Y->-X).
+	const FTransform Rot(FQuat(FVector(0, 0, 1), FMath::DegreesToRadians(90.0)));
+
+	// Global X scales along world X: the actor's local +X (now pointing world +Y) is untouched;
+	// its local +Y (pointing world -X) gets doubled.
+	const FTransform G = FBlenderXformMath::ScaleTransform(Rot, FVector::ZeroVector, MG);
+	TestTrue(TEXT("global X: local +X (world Y) unchanged"),
+		G.TransformPosition(FVector(1, 0, 0)).Equals(FVector(0, 1, 0), 1e-2));
+	TestTrue(TEXT("global X: local +Y (world -X) doubled"),
+		G.TransformPosition(FVector(0, 1, 0)).Equals(FVector(-2, 0, 0), 1e-2));
+
+	// Local X scales along the actor's OWN X (world +Y) — the mirror image of the global case.
+	const FTransform L = FBlenderXformMath::ScaleTransform(Rot, FVector::ZeroVector, ML);
+	TestTrue(TEXT("local X: own axis (world Y) doubled"),
+		L.TransformPosition(FVector(1, 0, 0)).Equals(FVector(0, 2, 0), 1e-2));
+	TestTrue(TEXT("local X: perpendicular (world -X) unchanged"),
+		L.TransformPosition(FVector(0, 1, 0)).Equals(FVector(-1, 0, 0), 1e-2));
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

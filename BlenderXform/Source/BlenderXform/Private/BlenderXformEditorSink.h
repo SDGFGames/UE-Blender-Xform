@@ -27,6 +27,17 @@ public:
 
 	bool HasSelection() const;
 
+	/**
+	 * Re-assert the post-cancel selection for a few frames. UE's native Escape-deselect (SELECT NONE,
+	 * bound to Escape on the level viewport) lands AFTER our hardware-Escape poll cancels the op, so an
+	 * immediate re-select loses the race; this is driven from the input processor's Tick to win it.
+	 * No-op when nothing is pending or the actors are already selected.
+	 */
+	void DrainReselect();
+
+	/** Instantly clear one transform component on the selection (Blender Alt+G/S/R), as one undo step. */
+	void ClearComponent(EXMode Mode);
+
 private:
 	struct FSnap
 	{
@@ -39,4 +50,13 @@ private:
 	TArray<FSnap> Snapshot;
 	TUniquePtr<FScopedTransaction> Transaction;
 	FVector CachedPivot = FVector::ZeroVector;
+
+	// Active actor's local axes, snapshotted at op start so a Local constraint uses a fixed basis
+	// instead of drifting with the live (mid-op) rotation.
+	FVector ActiveBX = FVector::ForwardVector;
+	FVector ActiveBY = FVector::RightVector;
+	FVector ActiveBZ = FVector::UpVector;
+
+	TArray<TWeakObjectPtr<AActor>> PendingReselect; // actors to keep selected after a cancel
+	int32 ReselectTicksLeft = 0;                     // frames remaining to re-assert PendingReselect
 };

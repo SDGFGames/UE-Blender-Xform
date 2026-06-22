@@ -123,6 +123,60 @@ FVector FBlenderXformMath::ScaleFactors(const FVector2D& PivotS, const FVector2D
 	return Out;
 }
 
+FMatrix FBlenderXformMath::ScaleMatrix(const FXConstraint& C, double Factor)
+{
+	// Factors along the constraint frame's three axes.
+	double FX = 1.0, FY = 1.0, FZ = 1.0;
+	if (C.Axis == EXAxis::Free)
+	{
+		FX = FY = FZ = Factor;
+	}
+	else if (!C.bPlane)
+	{
+		if      (C.Axis == EXAxis::X) { FX = Factor; }
+		else if (C.Axis == EXAxis::Y) { FY = Factor; }
+		else                          { FZ = Factor; }
+	}
+	else
+	{
+		// plane: the two non-locked axes scale, the named one stays 1
+		FX = (C.Axis == EXAxis::X) ? 1.0 : Factor;
+		FY = (C.Axis == EXAxis::Y) ? 1.0 : Factor;
+		FZ = (C.Axis == EXAxis::Z) ? 1.0 : Factor;
+	}
+
+	const FVector AX = C.BX.GetSafeNormal();
+	const FVector AY = C.BY.GetSafeNormal();
+	const FVector AZ = C.BZ.GetSafeNormal();
+
+	// S = sum_i F_i (A_i (x) A_i): scale by F_i along each orthonormal frame axis, expressed in world
+	// space. Symmetric, so it's identical under either matrix-vector convention.
+	FMatrix M = FMatrix::Identity;
+	for (int32 R = 0; R < 3; ++R)
+	{
+		for (int32 Col = 0; Col < 3; ++Col)
+		{
+			M.M[R][Col] = FX * AX[R] * AX[Col] + FY * AY[R] * AY[Col] + FZ * AZ[R] * AZ[Col];
+		}
+	}
+	return M;
+}
+
+FTransform FBlenderXformMath::ScaleTransform(const FTransform& Start, const FVector& Pivot, const FMatrix& WorldScale)
+{
+	const FVector Rel = Start.GetLocation() - Pivot;
+	const FVector NewLoc = Pivot + WorldScale.TransformVector(Rel);
+
+	// Apply the object's transform, then the world scale (linear parts only), and decompose back.
+	FMatrix Linear = Start.ToMatrixWithScale();
+	Linear.SetOrigin(FVector::ZeroVector);
+	const FMatrix NewLinear = Linear * WorldScale;
+
+	FTransform Out(NewLinear);
+	Out.SetLocation(NewLoc);
+	return Out;
+}
+
 double FBlenderXformMath::RotateAngleDeg(const FVector2D& PivotS, const FVector2D& StartS, const FVector2D& NowS,
                                          const FVector& AxisWorld, const FVector& CamForward,
                                          bool bNumeric, double NumericValue,

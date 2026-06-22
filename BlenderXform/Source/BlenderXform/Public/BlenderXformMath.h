@@ -48,6 +48,23 @@ struct FBlenderXformMath
 	                            const FXTuning& T = FXTuning());
 
 	/**
+	 * World-space scale matrix for a constraint frame + scalar factor. Scales by Factor along the
+	 * constrained frame axes (Free -> all three; single axis -> that one; plane -> the two free ones),
+	 * leaving the rest at 1. Because it's built in WORLD space from the frame's basis (world axes for
+	 * Global, the actor's rotated axes for Local), a Global single-axis scale on a rotated object
+	 * correctly scales along the world axis instead of the object's local axis.
+	 */
+	static FMatrix ScaleMatrix(const FXConstraint& C, double Factor);
+
+	/**
+	 * Apply a world-space scale (from ScaleMatrix) to a Start transform about a world Pivot: scales
+	 * the pivot offset and composes the scale onto the transform, then decomposes back to
+	 * rotation+scale. Any shear a Global axis-scale induces on a rotated object is dropped — the same
+	 * approximation UE's FTransform (and Blender's object-mode T/R/S) inherently makes.
+	 */
+	static FTransform ScaleTransform(const FTransform& Start, const FVector& Pivot, const FMatrix& WorldScale);
+
+	/**
 	 * Signed rotation angle in degrees about the constrained axis.
 	 *   numeric -> NumericValue
 	 *   mouse   -> signed screen-space sweep of (NowS-PivotS) relative to (StartS-PivotS),

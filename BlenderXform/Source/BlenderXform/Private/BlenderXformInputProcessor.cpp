@@ -162,6 +162,10 @@ void FBlenderXformInputProcessor::UpdateFromMouse()
 
 void FBlenderXformInputProcessor::Tick(const float, FSlateApplication&, TSharedRef<ICursor>)
 {
+	// Re-assert any post-cancel selection first — this must run even with no active op, because UE's
+	// native Escape-deselect lands a frame or two after we cancel. No-op when nothing is pending.
+	Sink.DrainReselect();
+
 	if (!Op.IsActive())
 	{
 		return;
@@ -238,6 +242,15 @@ bool FBlenderXformInputProcessor::HandleKeyDownEvent(FSlateApplication&, const F
 			return false;
 		}
 		const EXMode Mode = (K == EKeys::G) ? EXMode::Move : (K == EKeys::S ? EXMode::Scale : EXMode::Rotate);
+
+		// Alt+G/S/R clears that component instantly (Blender: Alt+G location, Alt+S scale, Alt+R
+		// rotation), one undo step. No modal op — just reset and hand control back.
+		if (InKeyEvent.IsAltDown())
+		{
+			Sink.ClearComponent(Mode);
+			return true;
+		}
+
 		Op.Begin(Mode, Sink);
 		CaptureStartCursor();
 		return true;

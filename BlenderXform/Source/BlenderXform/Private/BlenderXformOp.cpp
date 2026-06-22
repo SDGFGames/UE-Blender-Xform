@@ -271,8 +271,15 @@ void FBlenderXformOp::Recompute()
 			A.MoveDelta = FBlenderXformMath::MoveDelta(LastWorldStart, LastWorldNow, Con, bHasNumeric, NumVal, Tuning);
 			break;
 		case EXMode::Scale:
+		{
 			A.ScaleFac = FBlenderXformMath::ScaleFactors(LastPivotS, LastStartS, LastNowS, Con, bHasNumeric, NumVal, Tuning);
+			// The active factor (the component that departs most from 1) drives a world-space scale
+			// matrix, so the sink scales along the constraint's WORLD axis — Global vs Local correct
+			// on rotated objects, unlike a component-wise multiply on the local Scale3D.
+			const double Factor = LargestScaleComponent(A.ScaleFac);
+			A.ScaleMat = FBlenderXformMath::ScaleMatrix(Con, Factor);
 			break;
+		}
 		case EXMode::Rotate:
 		{
 			const FVector Axis = Con.HasConstraint() ? Con.AxisDir() : LastCamFwd;

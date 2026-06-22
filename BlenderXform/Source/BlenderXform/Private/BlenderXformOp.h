@@ -8,7 +8,8 @@ struct FXApplied
 {
 	EXMode  Mode      = EXMode::None;
 	FVector MoveDelta = FVector::ZeroVector; // Move: world translation from the snapshot
-	FVector ScaleFac  = FVector::OneVector;  // Scale: per-axis multipliers on relative scale
+	FVector ScaleFac  = FVector::OneVector;  // Scale: per-axis multipliers (for the HUD read-out)
+	FMatrix ScaleMat  = FMatrix::Identity;   // Scale: world-space scale matrix the sink applies
 	double  RotDeg    = 0.0;                  // Rotate: degrees about RotAxis
 	FVector RotAxis   = FVector::ZeroVector;  // Rotate: world axis (Free => camera forward)
 	FVector Pivot     = FVector::ZeroVector;  // Scale/Rotate pivot (world)
