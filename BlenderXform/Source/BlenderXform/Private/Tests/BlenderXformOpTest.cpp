@@ -190,4 +190,74 @@ bool FBlenderXformOpDuplicateTest::RunTest(const FString&)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformOpCursorTagTest, "BlenderXform.Op.CursorTag",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FBlenderXformOpCursorTagTest::RunTest(const FString&)
+{
+	// Inactive => empty (the HUD then draws neither tag nor hint bar).
+	{
+		FBlenderXformOp Op;
+		TestTrue(TEXT("inactive => empty tag"), Op.CursorTag().IsEmpty());
+	}
+
+	// Move + axis X + typed 5 => "X 5|": axis letter, typed buffer, caret; NO mode word, NO separators.
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Move, S);
+		Op.CycleAxis(EXAxis::X, false);
+		Op.PushDigit(TEXT('5'));
+		TestEqual(TEXT("typed move tag"), Op.CursorTag(), FString(TEXT("X 5|")));
+	}
+
+	// Live move along X (no numeric) => "X 5.00" (2-dp magnitude).
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Move, S);
+		Op.CycleAxis(EXAxis::X, false);
+		Op.UpdateFromScreen(FVector::ZeroVector, FVector(5, 0, 0),
+			FVector2D::ZeroVector, FVector2D::ZeroVector, FVector2D::ZeroVector, FVector(0, 0, -1));
+		TestEqual(TEXT("live move tag"), Op.CursorTag(), FString(TEXT("X 5.00")));
+	}
+
+	// Typed scale, free (no axis) => "2|".
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Scale, S);
+		Op.PushDigit(TEXT('2'));
+		TestEqual(TEXT("typed scale tag"), Op.CursorTag(), FString(TEXT("2|")));
+	}
+
+	// Typed rotate about Z => "Z 90|".
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Rotate, S);
+		Op.CycleAxis(EXAxis::Z, false);
+		Op.PushDigit(TEXT('9'));
+		Op.PushDigit(TEXT('0'));
+		TestEqual(TEXT("typed rotate tag"), Op.CursorTag(), FString(TEXT("Z 90|")));
+	}
+
+	// Live badges: Ctrl-snap + Shift-fine append [snap] [fine], axis prefix preserved.
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Move, S);
+		Op.CycleAxis(EXAxis::X, false);
+		FXTuning T; T.bSnap = true; T.bPrecision = true;
+		Op.SetTuning(T);
+		Op.UpdateFromScreen(FVector::ZeroVector, FVector(10, 0, 0),
+			FVector2D::ZeroVector, FVector2D::ZeroVector, FVector2D::ZeroVector, FVector(0, 0, -1));
+		const FString Tag = Op.CursorTag();
+		TestTrue(TEXT("axis kept"), Tag.StartsWith(TEXT("X ")));
+		TestTrue(TEXT("snap badge"), Tag.Contains(TEXT("[snap]")));
+		TestTrue(TEXT("fine badge"), Tag.Contains(TEXT("[fine]")));
+	}
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

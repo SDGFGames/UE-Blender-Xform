@@ -248,6 +248,61 @@ FString FBlenderXformOp::HudString() const
 	return S;
 }
 
+FString FBlenderXformOp::CursorTag() const
+{
+	// Compact read-out that rides next to the cursor (Blender's mouse value). Mode is omitted (you just
+	// pressed it; the bottom hint bar frames it) — only the live essentials: axis, value, active badges.
+	if (!IsActive())
+	{
+		return FString();
+	}
+
+	FString S;
+
+	// Axis context: a single letter for an axis lock, the two free axes for a plane, nothing when Free.
+	if (Con.Axis != EXAxis::Free)
+	{
+		if (Con.bPlane)
+		{
+			if (Con.Axis != EXAxis::X) { S += TEXT("X"); }
+			if (Con.Axis != EXAxis::Y) { S += TEXT("Y"); }
+			if (Con.Axis != EXAxis::Z) { S += TEXT("Z"); }
+		}
+		else
+		{
+			S = Con.Axis == EXAxis::X ? TEXT("X") : (Con.Axis == EXAxis::Y ? TEXT("Y") : TEXT("Z"));
+		}
+	}
+
+	auto AppendSpaced = [&S](const FString& Part)
+	{
+		if (!S.IsEmpty()) { S += TEXT(" "); }
+		S += Part;
+	};
+
+	if (!NumBuf.IsEmpty())
+	{
+		// Typed value with a caret marking active entry (buffer as-is, so a trailing '.'/'-' shows).
+		AppendSpaced(FString::Printf(TEXT("%s|"), *NumBuf));
+	}
+	else
+	{
+		switch (Mode)
+		{
+			case EXMode::Move:   AppendSpaced(FString::Printf(TEXT("%.2f"), Applied.MoveDelta.Size())); break;
+			case EXMode::Scale:  AppendSpaced(FString::Printf(TEXT("x%.3f"), LargestScaleComponent(Applied.ScaleFac))); break;
+			case EXMode::Rotate: AppendSpaced(FString::Printf(TEXT("%.1f°"), Applied.RotDeg)); break;
+			default: break;
+		}
+	}
+
+	if (bDuplicate)        { S += TEXT(" [copy]"); }
+	if (Tuning.bSnap)      { S += TEXT(" [snap]"); }
+	if (Tuning.bPrecision) { S += TEXT(" [fine]"); }
+
+	return S;
+}
+
 double FBlenderXformOp::LargestScaleComponent(const FVector& F)
 {
 	// The active scale factor is whichever component departs most from 1 (others are held at 1).

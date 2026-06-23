@@ -23,7 +23,7 @@ or plane, and confirm or cancel — exactly like Blender.
 - **Adjustable feel** — `MouseSensitivity` / `RotateSensitivity` tune drag magnitude. (Typed values always stay exact, regardless of snap/sensitivity.)
 - **Confirm / Cancel** — **LMB or Enter** confirms; **RMB or Esc** cancels and restores (selection and gizmo snap back to the object).
 - **One undo step** — the whole operation is a single `Ctrl/Cmd+Z`.
-- **Viewport HUD** — shows the live state, e.g. `Move | X (local) | 5.00 [snap]`.
+- **Viewport HUD** — a compact value tag rides next to the cursor (e.g. `X 5.00`, `Z 90°`, or `x2.000` while scaling), plus a key-hint bar along the viewport bottom listing the active shortcuts. Both show only during an op.
 - **Non-destructive toggle** — a toolbar button, the **`Alt+Shift+B`** shortcut (rebindable), or the `bEnabled` setting turns it off; native UE shortcuts (`G` = Game View, `R` = Scale gizmo, …) come straight back. **The toolbar icon reflects the state** — Blender-orange when on, muted/slashed when off.
 
 ## Keymap

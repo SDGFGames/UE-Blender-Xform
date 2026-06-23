@@ -91,7 +91,9 @@ public:
 			HUD = MakeUnique<FBlenderXformHUD>(
 				[Proc]() -> FString
 				{
-					return (Proc && Proc->GetOp().IsActive()) ? Proc->GetOp().Hud() : FString();
+					// Compact cursor read-out (CursorTag). Swap to Op.Hud() for the full
+					// "Move | X (local) | 5.00" string if a corner/full tag is ever wanted.
+					return (Proc && Proc->GetOp().IsActive()) ? Proc->GetOp().CursorTag() : FString();
 				},
 				[Proc]() -> FXAxisOverlay
 				{

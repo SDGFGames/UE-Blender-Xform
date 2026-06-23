@@ -59,6 +59,7 @@ public:
 	double NumericValue() const { return NumVal; }
 	const FXApplied& LastApplied() const { return Applied; }
 	FString HudString() const;
+	FString CursorTag() const;       // compact cursor read-out (axis + value + live [snap]/[fine]); empty when inactive
 	const FString& Hud() const { return CachedHud; } // cached read-out, refreshed each Recompute (cheap per-frame draw)
 
 private:
