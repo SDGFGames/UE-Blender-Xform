@@ -24,6 +24,7 @@ class IXApplySink
 public:
 	virtual ~IXApplySink() {}
 	virtual void Begin() = 0;                  // snapshot selection + open the undo transaction
+	virtual void BeginDuplicate() = 0;         // duplicate the selection in place, snapshot the copies + open the transaction
 	virtual void Apply(const FXApplied& A) = 0; // apply a preview onto the snapshot
 	virtual void Commit() = 0;                  // keep the transaction
 	virtual void Cancel() = 0;                  // restore snapshot + cancel the transaction
@@ -40,6 +41,7 @@ class FBlenderXformOp
 {
 public:
 	void Begin(EXMode InMode, IXApplySink& Sink); // start, or switch mode mid-op (keeps the snapshot)
+	void BeginDuplicate(IXApplySink& Sink);       // duplicate the selection, then grab it (Blender Shift+D)
 	void CycleAxis(EXAxis Axis, bool bShiftPlane); // same axis re-press: Global -> Local -> Free
 	void PushDigit(TCHAR Ch);                      // 0-9, '.', '-' (toggles sign)
 	void Backspace();
@@ -75,6 +77,7 @@ private:
 	FXTuning Tuning;        // live feel knobs fed by the input processor
 	FXApplied Applied;      // last preview pushed to the sink (for the HUD live read-out)
 	FString CachedHud;      // HudString() result, refreshed on each Recompute (read every draw frame)
+	bool bDuplicate = false; // this op is a Shift+D duplicate-grab (HUD badge; the sink's Cancel removes the copy)
 
 	FString NumBuf;
 	bool bHasNumeric = false;

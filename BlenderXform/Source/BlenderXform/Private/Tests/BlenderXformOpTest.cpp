@@ -10,9 +10,10 @@ namespace
 	{
 	public:
 		TArray<FXApplied> Applies;
-		int32 Begins = 0, Commits = 0, Cancels = 0;
+		int32 Begins = 0, Commits = 0, Cancels = 0, Duplicates = 0;
 
 		virtual void Begin() override { ++Begins; }
+		virtual void BeginDuplicate() override { ++Duplicates; }
 		virtual void Apply(const FXApplied& A) override { Applies.Add(A); }
 		virtual void Commit() override { ++Commits; }
 		virtual void Cancel() override { ++Cancels; }
@@ -147,6 +148,44 @@ bool FBlenderXformOpScaleRotateTest::RunTest(const FString&)
 		Op.Commit();
 		TestTrue(TEXT("R Z 90 -> 90 deg"), FMath::IsNearlyEqual(S.Last().RotDeg, 90.0, 1e-3));
 		TestTrue(TEXT("about world Z"), S.Last().RotAxis.Equals(FVector(0, 0, 1), 1e-3));
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformOpDuplicateTest, "BlenderXform.Op.DuplicateGrab",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FBlenderXformOpDuplicateTest::RunTest(const FString&)
+{
+	// Shift+D starts a Move op via the sink's DUPLICATE path (not plain Begin); the grab then flows
+	// exactly like a normal move, and commit keeps it.
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.BeginDuplicate(S);
+
+		TestEqual(TEXT("duplicate path used"), S.Duplicates, 1);
+		TestEqual(TEXT("plain Begin NOT used"), S.Begins, 0);
+		TestTrue(TEXT("active in Move mode"), Op.IsActive() && Op.GetMode() == EXMode::Move);
+
+		Op.CycleAxis(EXAxis::X, false);
+		Op.PushDigit(TEXT('5'));
+		Op.Commit();
+
+		TestTrue(TEXT("grab applies +5 on X to the copy"), S.Last().MoveDelta.Equals(FVector(5, 0, 0), 1e-3));
+		TestEqual(TEXT("committed"), S.Commits, 1);
+		TestFalse(TEXT("op ended"), Op.IsActive());
+	}
+
+	// Cancel routes through the sink's Cancel (where the production sink removes the copy).
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.BeginDuplicate(S);
+		Op.Cancel();
+
+		TestEqual(TEXT("cancel reached the sink"), S.Cancels, 1);
+		TestEqual(TEXT("not committed"), S.Commits, 0);
+		TestFalse(TEXT("op ended"), Op.IsActive());
 	}
 	return true;
 }

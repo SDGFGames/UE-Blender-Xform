@@ -108,6 +108,78 @@ void FXEditorSink::Begin()
 	}
 }
 
+void FXEditorSink::BeginDuplicate()
+{
+	// A fresh op supersedes any still-pending re-selection from a previous cancel.
+	PendingReselect.Reset();
+	ReselectTicksLeft = 0;
+	bDuplicated = true;
+
+	// Remember the originals first (while they're still the selection): cancelling a Shift+D removes the
+	// copy and falls back to selecting these.
+	OriginalSelection.Reset();
+	ULevel* Level = nullptr;
+	if (GEditor)
+	{
+		for (FSelectionIterator It(*GEditor->GetSelectedActors()); It; ++It)
+		{
+			if (AActor* A = Cast<AActor>(*It))
+			{
+				OriginalSelection.Add(A);
+				if (!Level) { Level = A->GetLevel(); } // duplicate into the active selection's level
+			}
+		}
+	}
+
+	// One transaction spans the duplicate AND the grab, so it's a single undo step. edactDuplicateSelected
+	// opens no transaction of its own (verified against UE 5.7 EditorActor.cpp), so the copy's spawn is
+	// recorded HERE — which is exactly why Cancel()'s Transaction->Cancel() can destroy the copy.
+	Transaction = MakeUnique<FScopedTransaction>(LOCTEXT("XformDuplicate", "Blender Duplicate"));
+
+	// Duplicate in place (no grid offset) so the copy starts exactly on the original, then we grab it —
+	// Blender Shift+D. edactDuplicateSelected makes the copies the new selection.
+	if (GUnrealEd && Level)
+	{
+		GUnrealEd->edactDuplicateSelected(Level, /*bOffsetLocations*/ false);
+	}
+
+	// The selection is now the copies; snapshot + Modify them exactly like a normal Begin().
+	CaptureSelection();
+	for (const FSnap& Snap : Snapshot)
+	{
+		if (AActor* Actor = Snap.Actor.Get())
+		{
+			Actor->Modify();
+			if (USceneComponent* Root = Actor->GetRootComponent())
+			{
+				Root->Modify();
+			}
+		}
+	}
+
+	// Guard against silently grabbing the ORIGINALS if the duplicate produced nothing (e.g. an
+	// un-duplicatable selection): on success edactDuplicateSelected deselects the originals first, so the
+	// snapshot holds only copies. If any snapshot actor is still an original, abort the whole op cleanly.
+	TSet<AActor*> Originals;
+	for (const TWeakObjectPtr<AActor>& W : OriginalSelection)
+	{
+		if (AActor* A = W.Get()) { Originals.Add(A); }
+	}
+	bool bMadeCopies = Snapshot.Num() > 0;
+	for (const FSnap& Snap : Snapshot)
+	{
+		if (Originals.Contains(Snap.Actor.Get())) { bMadeCopies = false; break; }
+	}
+	if (!bMadeCopies)
+	{
+		if (Transaction.IsValid()) { Transaction->Cancel(); Transaction.Reset(); }
+		Snapshot.Reset();
+		FullSelection.Reset();
+		OriginalSelection.Reset();
+		bDuplicated = false; // the Tick safety guard (empty snapshot) ends the op next frame
+	}
+}
+
 void FXEditorSink::Apply(const FXApplied& In)
 {
 	const FVector P = In.Pivot;
@@ -190,6 +262,8 @@ void FXEditorSink::Commit()
 	// Destroying the FScopedTransaction finalizes it into the undo buffer as one step.
 	Transaction.Reset();
 	Snapshot.Reset();
+	bDuplicated = false; // a confirmed Shift+D keeps the copy; this op is done
+	OriginalSelection.Reset();
 
 	// We moved actor transforms directly, so re-seat the editor's transform gizmo on them.
 	if (GEditor)
@@ -201,6 +275,39 @@ void FXEditorSink::Commit()
 
 void FXEditorSink::Cancel()
 {
+	if (bDuplicated)
+	{
+		// Shift+D cancel = remove the copy entirely (the user's chosen behavior). The copy's spawn and the
+		// grab both live in our transaction, so cancelling it destroys the copies and — because the
+		// transaction also recorded the selection swap — restores the original selection. We deliberately
+		// do NOT restore the snapshot transforms first: those copies are about to cease to exist.
+		bDuplicated = false;
+		if (Transaction.IsValid())
+		{
+			Transaction->Cancel();
+			Transaction.Reset();
+		}
+		// Re-seat the gizmo on the restored originals (the grab left UE's pivot at the dragged location).
+		if (GUnrealEd)
+		{
+			GUnrealEd->SetPivotMovedIndependently(false);
+			GUnrealEd->UpdatePivotLocationForSelection();
+		}
+		// Keep the ORIGINALS selected across the macOS native Escape-deselect race (see DrainReselect).
+		PendingReselect = OriginalSelection;
+		ReselectTicksLeft = 3;
+
+		Snapshot.Reset();
+		FullSelection.Reset();
+		OriginalSelection.Reset();
+
+		if (GEditor)
+		{
+			GEditor->RedrawLevelEditingViewports();
+		}
+		return;
+	}
+
 	for (const FSnap& Snap : Snapshot)
 	{
 		if (AActor* Actor = Snap.Actor.Get())

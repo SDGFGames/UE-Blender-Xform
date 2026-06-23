@@ -19,6 +19,7 @@ public:
 	virtual ~FXEditorSink();
 
 	virtual void Begin() override;
+	virtual void BeginDuplicate() override;
 	virtual void Apply(const FXApplied& In) override;
 	virtual void Commit() override;
 	virtual void Cancel() override;
@@ -63,4 +64,9 @@ private:
 	TArray<TWeakObjectPtr<AActor>> FullSelection;    // ALL selected actors at op start (pivot median + re-select)
 	TArray<TWeakObjectPtr<AActor>> PendingReselect; // actors to keep selected after a cancel
 	int32 ReselectTicksLeft = 0;                     // frames remaining to re-assert PendingReselect
+
+	// Shift+D duplicate-grab state. bDuplicated routes Cancel() down the "remove the copy" path (the
+	// user's chosen behavior); OriginalSelection is what we re-select when that happens.
+	bool bDuplicated = false;
+	TArray<TWeakObjectPtr<AActor>> OriginalSelection; // selection BEFORE the duplicate (cancel falls back to it)
 };

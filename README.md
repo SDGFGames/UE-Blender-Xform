@@ -16,6 +16,7 @@ or plane, and confirm or cancel — exactly like Blender.
 - **Global / Local** — press the same axis key again to toggle Global → Local → off (Local uses the active object's axes).
 - **Numeric entry** — type a value for an exact transform, e.g. `G X 5 Enter` moves +5 on X. Supports `.` and `-`.
 - **Clear transforms** — `Alt+G` / `Alt+S` / `Alt+R` instantly reset location / scale / rotation (one undo step).
+- **Duplicate & grab** — `Shift+D` duplicates the selection in place and immediately starts a Move (Blender-style). **Confirm** (Enter/LMB) keeps the copy; **cancel** (Esc/RMB) removes it and re-selects the originals. The whole duplicate+move is one undo step, and you can press `S`/`R`/`X`/`Y`/`Z`/numbers on the copy just like a normal grab.
 - **Snapping (bound to UE)** — snap step sizes come from UE's viewport **Snap Settings** (translate / rotate / scale). When the matching grid-snap toggle is on, transforms snap automatically; hold **Ctrl** to force snapping on demand (Blender-style) even when the toggle is off.
 - **Precision (`Shift`)** — hold **Shift** while dragging for fine, slowed control (default 0.1×).
 - **Axis guide lines** — constraining to an axis draws Blender's red/green/blue guide line through the pivot.
@@ -31,6 +32,7 @@ or plane, and confirm or cancel — exactly like Blender.
 |---|---|
 | `G` / `S` / `R` | Start Move / Scale / Rotate |
 | `Alt`+`G` / `S` / `R` | Clear location / scale / rotation (instant) |
+| `Shift`+`D` | Duplicate the selection + grab (cancel removes the copy) |
 | `X` / `Y` / `Z` | Constrain to that axis (press again → Local → off) |
 | `Shift`+`X`/`Y`/`Z` | Constrain to the plane perpendicular to that axis |
 | `Ctrl` (hold) | Force snap on demand (uses UE's grid sizes) |

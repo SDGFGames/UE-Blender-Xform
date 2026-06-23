@@ -300,7 +300,28 @@ bool FBlenderXformInputProcessor::HandleKeyDownEvent(FSlateApplication&, const F
 		return true;
 	}
 
-	// Idle: only G/S/R start an op, and only over the viewport with a selection. Everything else
+	// Idle Shift+D duplicates the selection and immediately grabs it (Blender). Like G/S/R it only fires
+	// over the viewport with a selection; otherwise it falls through (UE has no native Shift+D binding).
+	if (K == EKeys::D && bShift &&
+	    !InKeyEvent.IsControlDown() && !InKeyEvent.IsCommandDown() && !InKeyEvent.IsAltDown())
+	{
+		if (!CanStartHere())
+		{
+			return false;
+		}
+		// edactDuplicateSelected duplicates COMPONENTS (not actors) when a component is sub-selected
+		// (in-viewport component edit mode); that's not what Shift+D means here, so fall through cleanly
+		// rather than start an op that would just churn a no-op transaction. G/S/R are unaffected.
+		if (GEditor && GEditor->GetSelectedComponentCount() > 0)
+		{
+			return false;
+		}
+		Op.BeginDuplicate(Sink);
+		CaptureStartCursor();
+		return true;
+	}
+
+	// Idle: G/S/R start an op, and only over the viewport with a selection. Everything else
 	// (including G/R when those conditions aren't met) passes through to native UE.
 	if (K == EKeys::G || K == EKeys::S || K == EKeys::R)
 	{

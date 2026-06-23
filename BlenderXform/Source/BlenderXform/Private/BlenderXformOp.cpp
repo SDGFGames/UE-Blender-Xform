@@ -24,12 +24,40 @@ void FBlenderXformOp::Begin(EXMode InMode, IXApplySink& InSink)
 		// Fresh op: snapshot the selection and open the transaction. A mode switch (G->S->R) keeps
 		// the original snapshot so the new op transforms from the same start and Cancel still restores it.
 		Sink = &InSink;
+		bDuplicate = false; // a plain G/S/R is never a duplicate (a mode-switch keeps the flag instead)
 		LastWorldStart = LastWorldNow = FVector::ZeroVector;
 		LastPivotS = LastStartS = LastNowS = FVector2D::ZeroVector;
 		LastCamFwd = FVector(0, 0, -1);
 		Sink->Begin();
 	}
 
+	Recompute();
+}
+
+void FBlenderXformOp::BeginDuplicate(IXApplySink& InSink)
+{
+	// A duplicate-grab is always a fresh op (you can't switch INTO it), so end any active op first.
+	if (IsActive())
+	{
+		Cancel();
+	}
+
+	Mode = EXMode::Move;
+	Con = FXConstraint();
+	NumBuf.Empty();
+	bHasNumeric = false;
+	NumVal = 0.0;
+	bDuplicate = true;
+
+	Sink = &InSink;
+	LastWorldStart = LastWorldNow = FVector::ZeroVector;
+	LastPivotS = LastStartS = LastNowS = FVector2D::ZeroVector;
+	LastCamFwd = FVector(0, 0, -1);
+
+	// The sink duplicates the selection in place and snapshots the COPIES (vs Begin(), which snapshots the
+	// current selection). From here it's an ordinary Move — axis locks, numeric entry, snap, and a later
+	// S/R mode-switch all work unchanged; only the sink's Commit/Cancel differ (Cancel removes the copy).
+	Sink->BeginDuplicate();
 	Recompute();
 }
 
@@ -213,6 +241,7 @@ FString FBlenderXformOp::HudString() const
 		}
 	}
 
+	if (bDuplicate)        { S += TEXT(" [copy]"); }
 	if (Tuning.bSnap)      { S += TEXT(" [snap]"); }
 	if (Tuning.bPrecision) { S += TEXT(" [fine]"); }
 
@@ -239,6 +268,7 @@ void FBlenderXformOp::Reset()
 	Sink = nullptr;
 	Applied = FXApplied();
 	CachedHud.Empty();
+	bDuplicate = false;
 	// Tuning intentionally persists across ops; it is owned/refreshed by the input processor.
 }
 
