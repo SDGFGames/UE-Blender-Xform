@@ -27,6 +27,8 @@ class FBlenderXformHUD
 public:
 	FBlenderXformHUD(TFunction<FString()> InGetText, TFunction<FXAxisOverlay()> InGetAxes);
 
+	static FString HintTextForViewportWidth(float ViewportWidth);
+
 	void Register();
 	void Unregister();
 

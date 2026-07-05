@@ -3,6 +3,15 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+namespace
+{
+	FVector TransformVectorXYZ(const FMatrix& M, const FVector& V)
+	{
+		const FVector4 R = M.TransformVector(V);
+		return FVector(R.X, R.Y, R.Z);
+	}
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformMathConstrainTest, "BlenderXform.Math.ConstrainVector",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FBlenderXformMathConstrainTest::RunTest(const FString&)
@@ -206,16 +215,16 @@ bool FBlenderXformMathScaleAxisTest::RunTest(const FString&)
 	FXConstraint GX; GX.Axis = EXAxis::X; // world basis (defaults)
 	const FMatrix MG = FBlenderXformMath::ScaleMatrix(GX, 2.0);
 	TestTrue(TEXT("global X scales world X only"),
-		MG.TransformVector(FVector(1, 1, 1)).Equals(FVector(2, 1, 1), 1e-3));
+		TransformVectorXYZ(MG, FVector(1, 1, 1)).Equals(FVector(2, 1, 1), 1e-3));
 
 	// A Local frame whose X points along world +Y must scale along world Y, not world X.
 	FXConstraint LX; LX.Axis = EXAxis::X; LX.Orient = EXOrient::Local;
 	LX.BX = FVector(0, 1, 0); LX.BY = FVector(-1, 0, 0); LX.BZ = FVector(0, 0, 1); // 90 deg about Z
 	const FMatrix ML = FBlenderXformMath::ScaleMatrix(LX, 2.0);
 	TestTrue(TEXT("local X (along world Y) scales world Y"),
-		ML.TransformVector(FVector(0, 3, 0)).Equals(FVector(0, 6, 0), 1e-3));
+		TransformVectorXYZ(ML, FVector(0, 3, 0)).Equals(FVector(0, 6, 0), 1e-3));
 	TestTrue(TEXT("local X leaves world X"),
-		ML.TransformVector(FVector(4, 0, 0)).Equals(FVector(4, 0, 0), 1e-3));
+		TransformVectorXYZ(ML, FVector(4, 0, 0)).Equals(FVector(4, 0, 0), 1e-3));
 
 	// ScaleTransform: the pivot offset scales; identity rotation gives a plain Scale3D.
 	const FTransform Off(FQuat::Identity, FVector(10, 0, 0), FVector::OneVector);

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Framework/Application/IInputProcessor.h"
+#include "InputCoreTypes.h"
 #include "BlenderXformOp.h"
 #include "BlenderXformEditorSink.h"
 
@@ -9,6 +10,11 @@ struct FKeyEvent;
 struct FPointerEvent;
 class FSlateApplication;
 class FLevelEditorViewportClient;
+
+struct FBlenderXformInputPolicy
+{
+	static bool ShouldConsumeUnsafeEditorShortcut(const FKey& Key, bool bControlDown, bool bCommandDown);
+};
 
 /**
  * Slate input pre-processor implementing Blender-style modal G/S/R in the level viewport.
@@ -41,7 +47,7 @@ private:
 	void RefreshTuningFromModifiers(); // read current Ctrl/Shift and push to the op (no key interception)
 	bool ComputeSnapActive() const;    // Ctrl held OR UE's per-mode grid-snap toggle on (for the op's mode)
 	bool EnsureViewCache(FLevelEditorViewportClient* VC); // (re)compute the scene view at most once per frame
-	FVector DeprojectToPlane(const FVector2D& Pixel, const FVector& PlanePt, const FVector& PlaneN) const;
+	bool DeprojectToPlane(const FVector2D& Pixel, const FVector& PlanePt, const FVector& PlaneN, FVector& OutWorld) const;
 
 	FBlenderXformOp Op;
 	FXEditorSink Sink;

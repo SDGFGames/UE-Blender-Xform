@@ -126,6 +126,27 @@ bool FBlenderXformOpTuningTest::RunTest(const FString&)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformOpSkipsUnchangedApplyTest, "BlenderXform.Op.SkipsUnchangedApply",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FBlenderXformOpSkipsUnchangedApplyTest::RunTest(const FString&)
+{
+	FFakeSink S;
+	FBlenderXformOp Op;
+	Op.Begin(EXMode::Move, S);
+	Op.CycleAxis(EXAxis::X, false);
+
+	const int32 AppliesBefore = S.Applies.Num();
+	Op.UpdateFromScreen(FVector::ZeroVector, FVector(5, 0, 0),
+		FVector2D::ZeroVector, FVector2D::ZeroVector, FVector2D::ZeroVector, FVector(0, 0, -1));
+	const int32 AppliesAfterFirstMove = S.Applies.Num();
+	Op.UpdateFromScreen(FVector::ZeroVector, FVector(5, 0, 0),
+		FVector2D::ZeroVector, FVector2D::ZeroVector, FVector2D::ZeroVector, FVector(0, 0, -1));
+
+	TestTrue(TEXT("first changed cursor applies"), AppliesAfterFirstMove > AppliesBefore);
+	TestEqual(TEXT("unchanged cursor does not re-apply"), S.Applies.Num(), AppliesAfterFirstMove);
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformOpScaleRotateTest, "BlenderXform.Op.ScaleAndRotate",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FBlenderXformOpScaleRotateTest::RunTest(const FString&)

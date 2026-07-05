@@ -59,6 +59,16 @@ namespace
 
 }
 
+bool FBlenderXformInputPolicy::ShouldConsumeUnsafeEditorShortcut(const FKey& Key, bool bControlDown, bool bCommandDown)
+{
+	if (!bControlDown && !bCommandDown)
+	{
+		return false;
+	}
+
+	return Key == EKeys::Z || Key == EKeys::Y || Key == EKeys::S;
+}
+
 bool FBlenderXformInputProcessor::IsEnabled() const
 {
 	const UBlenderXformSettings* S = GetDefault<UBlenderXformSettings>();
@@ -185,8 +195,13 @@ void FBlenderXformInputProcessor::UpdateFromMouse()
 	}
 
 	const FVector2D NowPixel = ViewportMousePixel(VC);
-	const FVector WorldStart = DeprojectToPlane(StartPixel, Pivot, CachedCamFwd);
-	const FVector WorldNow   = DeprojectToPlane(NowPixel,   Pivot, CachedCamFwd);
+	FVector WorldStart = FVector::ZeroVector;
+	FVector WorldNow = FVector::ZeroVector;
+	if (!DeprojectToPlane(StartPixel, Pivot, CachedCamFwd, WorldStart) ||
+	    !DeprojectToPlane(NowPixel, Pivot, CachedCamFwd, WorldNow))
+	{
+		return;
+	}
 
 	Op.UpdateFromScreen(WorldStart, WorldNow, PivotPixel, StartPixel, NowPixel, CachedCamFwd);
 }
@@ -218,12 +233,13 @@ bool FBlenderXformInputProcessor::EnsureViewCache(FLevelEditorViewportClient* VC
 	return true;
 }
 
-FVector FBlenderXformInputProcessor::DeprojectToPlane(const FVector2D& Pixel, const FVector& PlanePt, const FVector& PlaneN) const
+bool FBlenderXformInputProcessor::DeprojectToPlane(const FVector2D& Pixel, const FVector& PlanePt, const FVector& PlaneN, FVector& OutWorld) const
 {
 	FVector Origin, Dir;
 	FSceneView::DeprojectScreenToWorld(Pixel, CachedViewRect, CachedInvViewProj, Origin, Dir);
 	bool bValid = false;
-	return FBlenderXformMath::RayPlaneIntersect(Origin, Dir, PlanePt, PlaneN, bValid);
+	OutWorld = FBlenderXformMath::RayPlaneIntersect(Origin, Dir, PlanePt, PlaneN, bValid);
+	return bValid;
 }
 
 void FBlenderXformInputProcessor::Tick(const float, FSlateApplication&, TSharedRef<ICursor>)
@@ -274,9 +290,14 @@ bool FBlenderXformInputProcessor::HandleKeyDownEvent(FSlateApplication&, const F
 
 	if (Op.IsActive())
 	{
-		// Always let Cmd/Ctrl/Alt chords through, so system/editor shortcuts (Cmd+Z undo, Cmd+S save, our
-		// Alt+Shift+B toggle, ...) are never swallowed by an active op. Our modal keys never use these
-		// modifiers, so this is safe. Core to not breaking native UE.
+		if (FBlenderXformInputPolicy::ShouldConsumeUnsafeEditorShortcut(K, InKeyEvent.IsControlDown(), InKeyEvent.IsCommandDown()))
+		{
+			return true;
+		}
+
+		// Let most Cmd/Ctrl/Alt chords through so editor shortcuts (including our Alt+Shift+B toggle) keep
+		// working during a modal op. Undo/redo/save are consumed above because they would mutate editor
+		// state while our transaction is still open.
 		if (InKeyEvent.IsCommandDown() || InKeyEvent.IsControlDown() || InKeyEvent.IsAltDown())
 		{
 			return false;
