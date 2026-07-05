@@ -1,6 +1,36 @@
 #include "BlenderXformOp.h"
 #include "BlenderXformMath.h"
 
+namespace
+{
+	bool MatrixNearlyEqual(const FMatrix& A, const FMatrix& B, double Tolerance)
+	{
+		for (int32 Row = 0; Row < 4; ++Row)
+		{
+			for (int32 Col = 0; Col < 4; ++Col)
+			{
+				if (!FMath::IsNearlyEqual(A.M[Row][Col], B.M[Row][Col], Tolerance))
+				{
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	bool AppliedNearlyEqual(const FXApplied& A, const FXApplied& B)
+	{
+		constexpr double Tolerance = 1e-6;
+		return A.Mode == B.Mode &&
+			A.MoveDelta.Equals(B.MoveDelta, Tolerance) &&
+			A.ScaleFac.Equals(B.ScaleFac, Tolerance) &&
+			MatrixNearlyEqual(A.ScaleMat, B.ScaleMat, Tolerance) &&
+			FMath::IsNearlyEqual(A.RotDeg, B.RotDeg, Tolerance) &&
+			A.RotAxis.Equals(B.RotAxis, Tolerance) &&
+			A.Pivot.Equals(B.Pivot, Tolerance);
+	}
+}
+
 void FBlenderXformOp::Begin(EXMode InMode, IXApplySink& InSink)
 {
 	// Handing off to a different sink while active would overwrite Sink and leak its open transaction.
@@ -393,8 +423,12 @@ void FBlenderXformOp::Recompute()
 			break;
 	}
 
+	const bool bAppliedChanged = !AppliedNearlyEqual(Applied, A);
 	Applied = A;
-	Sink->Apply(A);
+	if (bAppliedChanged)
+	{
+		Sink->Apply(A);
+	}
 
 	// Refresh the cached HUD string here (input-driven), so the per-frame draw just reads it.
 	CachedHud = HudString();

@@ -15,6 +15,13 @@ FBlenderXformHUD::FBlenderXformHUD(TFunction<FString()> InGetText, TFunction<FXA
 {
 }
 
+FString FBlenderXformHUD::HintTextForViewportWidth(float ViewportWidth)
+{
+	static const FString FullHints = TEXT("[X/Y/Z] axis   [Shift+axis] plane   [Shift] fine   [Ctrl] snap   [0-9 . -] type   [Enter/LMB] confirm   [Esc/RMB] cancel");
+	static const FString CompactHints = TEXT("[X/Y/Z] axis   [Shift] fine   [Ctrl] snap   [Enter/LMB] confirm   [Esc/RMB] cancel");
+	return ViewportWidth < 800.0f ? CompactHints : FullHints;
+}
+
 void FBlenderXformHUD::Register()
 {
 	// "Editor" show flag is on in level-editor viewports, so this overlay draws there.
@@ -130,7 +137,7 @@ void FBlenderXformHUD::Draw(UCanvas* Canvas, APlayerController* /*PC*/)
 	Canvas->DrawItem(TagItem);
 
 	// --- static key-hint bar pinned to the bottom of the viewport ---
-	static const FString Hints = TEXT("[X/Y/Z] axis   [Shift+axis] plane   [Shift] fine   [Ctrl] snap   [0-9 . -] type   [Enter/LMB] confirm   [Esc/RMB] cancel");
+	const FString Hints = HintTextForViewportWidth(Canvas->SizeX);
 	UFont* HintFont = GEngine ? GEngine->GetSmallFont() : Font;
 	if (HintFont)
 	{
