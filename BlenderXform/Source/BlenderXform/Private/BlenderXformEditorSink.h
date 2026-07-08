@@ -26,6 +26,8 @@ public:
 	virtual FVector Pivot() const override;
 	virtual void ActiveBasis(FVector& X, FVector& Y, FVector& Z) const override;
 
+	static bool CanTransformActorClass(const UClass* ActorClass);
+	static bool CanTransformActor(const AActor* Actor);
 	bool HasSelection() const;
 
 	/**

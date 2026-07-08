@@ -20,6 +20,7 @@ public class BlenderXform : ModuleRules
 			"ApplicationCore",   // FModifierKeysState, key/pointer events
 			"InputCore",         // EKeys
 			"UnrealEd",          // GEditor, FScopedTransaction, selection, GCurrentLevelEditingViewportClient
+			"Landscape",         // ALandscapeProxy class filter
 			"LevelEditor",       // level viewport access
 			"ToolMenus",         // toolbar toggle button
 			"DeveloperSettings", // UBlenderXformSettings

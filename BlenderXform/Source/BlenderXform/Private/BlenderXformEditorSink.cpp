@@ -7,15 +7,49 @@
 #include "Selection.h"
 #include "GameFramework/Actor.h"
 #include "Components/SceneComponent.h"
+#include "LandscapeProxy.h"
 #include "ScopedTransaction.h"
 
 #define LOCTEXT_NAMESPACE "BlenderXform"
 
 FXEditorSink::~FXEditorSink() = default;
 
+bool FXEditorSink::CanTransformActorClass(const UClass* ActorClass)
+{
+	return ActorClass && !ActorClass->IsChildOf(ALandscapeProxy::StaticClass());
+}
+
+bool FXEditorSink::CanTransformActor(const AActor* Actor)
+{
+	return Actor && CanTransformActorClass(Actor->GetClass());
+}
+
 bool FXEditorSink::HasSelection() const
 {
-	return GEditor && GEditor->GetSelectedActors() && GEditor->GetSelectedActors()->Num() > 0;
+	if (!GEditor)
+	{
+		return false;
+	}
+
+	USelection* Sel = GEditor->GetSelectedActors();
+	if (!Sel)
+	{
+		return false;
+	}
+
+	bool bHasTransformableActor = false;
+	for (FSelectionIterator It(*Sel); It; ++It)
+	{
+		if (AActor* Actor = Cast<AActor>(*It))
+		{
+			if (!CanTransformActor(Actor))
+			{
+				return false;
+			}
+			bHasTransformableActor = true;
+		}
+	}
+	return bHasTransformableActor;
 }
 
 void FXEditorSink::CaptureSelection()
@@ -42,6 +76,11 @@ void FXEditorSink::CaptureSelection()
 
 		for (AActor* Actor : Selected)
 		{
+			if (!CanTransformActor(Actor))
+			{
+				continue;
+			}
+
 			// Every selected actor counts toward the median pivot and must be re-selected after a
 			// cancel — so track them all here, independent of the transform filter below.
 			FullSelection.Add(Actor);
@@ -431,7 +470,7 @@ void FXEditorSink::ClearComponent(EXMode Mode)
 	for (FSelectionIterator It(*GEditor->GetSelectedActors()); It; ++It)
 	{
 		AActor* Actor = Cast<AActor>(*It);
-		if (!Actor)
+		if (!CanTransformActor(Actor))
 		{
 			continue;
 		}
