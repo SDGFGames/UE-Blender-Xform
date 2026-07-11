@@ -17,8 +17,8 @@ FBlenderXformHUD::FBlenderXformHUD(TFunction<FString()> InGetText, TFunction<FXA
 
 FString FBlenderXformHUD::HintTextForViewportWidth(float ViewportWidth)
 {
-	static const FString FullHints = TEXT("[X/Y/Z] axis   [Shift+axis] plane   [Shift] fine   [Ctrl] snap   [0-9 . -] type   [Enter/LMB] confirm   [Esc/RMB] cancel");
-	static const FString CompactHints = TEXT("[X/Y/Z] axis   [Shift] fine   [Ctrl] snap   [Enter/LMB] confirm   [Esc/RMB] cancel");
+	static const FString FullHints = TEXT("[X/Y/Z] axis   [Shift+axis] plane   [Shift] fine   [Ctrl] snap   [C] surface   [0-9 . -] type   [Enter/LMB] confirm   [Esc/RMB] cancel");
+	static const FString CompactHints = TEXT("[X/Y/Z] axis   [Shift] fine   [Ctrl] snap   [C] surface   [Enter/LMB] confirm   [Esc/RMB] cancel");
 	return ViewportWidth < 800.0f ? CompactHints : FullHints;
 }
 

@@ -26,6 +26,39 @@ FVector FBlenderXformMath::ConstrainVector(const FVector& V, const FXConstraint&
 	return C.bPlane ? (V - Along) : Along;
 }
 
+FVector FBlenderXformMath::ConstrainAndSnapMove(const FVector& Raw, const FXConstraint& C, const FXTuning& T)
+{
+	if (!T.bSnap)
+	{
+		return ConstrainVector(Raw, C);
+	}
+
+	// Snap along the constraint so Local snapping follows the rotated basis (not world axes).
+	if (C.Axis == EXAxis::Free)
+	{
+		return FVector(SnapTo(Raw.X, T.MoveSnap), SnapTo(Raw.Y, T.MoveSnap), SnapTo(Raw.Z, T.MoveSnap));
+	}
+
+	const FVector BX = C.BX.GetSafeNormal();
+	const FVector BY = C.BY.GetSafeNormal();
+	const FVector BZ = C.BZ.GetSafeNormal();
+
+	if (!C.bPlane)
+	{
+		const FVector Dir = C.AxisDir().GetSafeNormal();
+		if (Dir.IsNearlyZero())
+		{
+			return ConstrainVector(Raw, C);
+		}
+		return SnapTo(FVector::DotProduct(Raw, Dir), T.MoveSnap) * Dir;
+	}
+
+	const double CX = (C.Axis == EXAxis::X) ? 0.0 : SnapTo(FVector::DotProduct(Raw, BX), T.MoveSnap);
+	const double CY = (C.Axis == EXAxis::Y) ? 0.0 : SnapTo(FVector::DotProduct(Raw, BY), T.MoveSnap);
+	const double CZ = (C.Axis == EXAxis::Z) ? 0.0 : SnapTo(FVector::DotProduct(Raw, BZ), T.MoveSnap);
+	return CX * BX + CY * BY + CZ * BZ;
+}
+
 FVector FBlenderXformMath::RayPlaneIntersect(const FVector& RayOrigin, const FVector& RayDir,
                                              const FVector& PlanePoint, const FVector& PlaneNormal, bool& bOutValid)
 {
@@ -61,37 +94,7 @@ FVector FBlenderXformMath::MoveDelta(const FVector& WorldStart, const FVector& W
 	}
 
 	const FVector Raw = (WorldNow - WorldStart) * T.MoveGain();
-
-	if (!T.bSnap)
-	{
-		return ConstrainVector(Raw, C);
-	}
-
-	// Snap along the constraint so Local snapping follows the rotated basis (not world axes).
-	if (C.Axis == EXAxis::Free)
-	{
-		return FVector(SnapTo(Raw.X, T.MoveSnap), SnapTo(Raw.Y, T.MoveSnap), SnapTo(Raw.Z, T.MoveSnap));
-	}
-
-	const FVector BX = C.BX.GetSafeNormal();
-	const FVector BY = C.BY.GetSafeNormal();
-	const FVector BZ = C.BZ.GetSafeNormal();
-
-	if (!C.bPlane)
-	{
-		const FVector Dir = C.AxisDir().GetSafeNormal();
-		if (Dir.IsNearlyZero())
-		{
-			return ConstrainVector(Raw, C);
-		}
-		return SnapTo(FVector::DotProduct(Raw, Dir), T.MoveSnap) * Dir;
-	}
-
-	// Plane: keep the two free basis axes, snap each, drop the locked one.
-	const double CX = (C.Axis == EXAxis::X) ? 0.0 : SnapTo(FVector::DotProduct(Raw, BX), T.MoveSnap);
-	const double CY = (C.Axis == EXAxis::Y) ? 0.0 : SnapTo(FVector::DotProduct(Raw, BY), T.MoveSnap);
-	const double CZ = (C.Axis == EXAxis::Z) ? 0.0 : SnapTo(FVector::DotProduct(Raw, BZ), T.MoveSnap);
-	return CX * BX + CY * BY + CZ * BZ;
+	return ConstrainAndSnapMove(Raw, C, T);
 }
 
 FVector FBlenderXformMath::ScaleFactors(const FVector2D& PivotS, const FVector2D& StartS, const FVector2D& NowS,

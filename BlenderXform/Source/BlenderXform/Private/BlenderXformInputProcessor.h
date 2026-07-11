@@ -14,6 +14,9 @@ class FLevelEditorViewportClient;
 struct FBlenderXformInputPolicy
 {
 	static bool ShouldConsumeUnsafeEditorShortcut(const FKey& Key, bool bControlDown, bool bCommandDown);
+	static bool ShouldToggleSurfaceSnap(EXMode Mode, const FKey& Key, bool bIsRepeat,
+	                                    bool bShiftDown, bool bControlDown, bool bCommandDown, bool bAltDown);
+	static bool HasMovedForSurfaceSnap(const FVector2D& Start, const FVector2D& Now);
 };
 
 /**
@@ -47,11 +50,14 @@ private:
 	void RefreshTuningFromModifiers(); // read current Ctrl/Shift and push to the op (no key interception)
 	bool ComputeSnapActive() const;    // Ctrl held OR UE's per-mode grid-snap toggle on (for the op's mode)
 	bool EnsureViewCache(FLevelEditorViewportClient* VC); // (re)compute the scene view at most once per frame
+	bool DeprojectRay(const FVector2D& Pixel, FVector& OutOrigin, FVector& OutDirection) const;
 	bool DeprojectToPlane(const FVector2D& Pixel, const FVector& PlanePt, const FVector& PlaneN, FVector& OutWorld) const;
 
 	FBlenderXformOp Op;
 	FXEditorSink Sink;
 	FVector2D StartPixel = FVector2D::ZeroVector;
+	bool bSurfaceSnapEnabled = false;      // session-level C toggle; persists across Commit/Cancel
+	bool bMouseMovedSinceOpStart = false; // prevents an enabled mode from teleporting on the G key-down
 	bool bLastSnapActive = false;  // last snap state (Ctrl || UE grid-snap toggle) + Shift, to re-apply
 	bool bLastShiftDown = false;   // on a stationary change (tap Ctrl, or flip the UE snap toggle)
 	FXTuning CachedBaseTuning;      // settings read once per op (modifiers patched in per move) — avoids per-move GetDefault

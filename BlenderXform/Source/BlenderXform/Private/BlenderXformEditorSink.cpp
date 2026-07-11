@@ -7,6 +7,9 @@
 #include "Selection.h"
 #include "GameFramework/Actor.h"
 #include "Components/SceneComponent.h"
+#include "Components/PrimitiveComponent.h"
+#include "Engine/World.h"
+#include "EngineDefines.h"
 #include "LandscapeProxy.h"
 #include "ScopedTransaction.h"
 
@@ -22,6 +25,88 @@ bool FXEditorSink::CanTransformActorClass(const UClass* ActorClass)
 bool FXEditorSink::CanTransformActor(const AActor* Actor)
 {
 	return Actor && CanTransformActorClass(Actor->GetClass());
+}
+
+FBox FXEditorSink::PreferredSurfaceBounds(const FBox& CollisionBounds, const FBox& VisualBounds)
+{
+	return CollisionBounds.IsValid ? CollisionBounds : VisualBounds;
+}
+
+bool FXEditorSink::TraceStaticSurface(UWorld* World, const FVector& RayOrigin, const FVector& RayDirection, FXSurfaceHit& OutHit) const
+{
+	OutHit = FXSurfaceHit();
+	const FVector Dir = RayDirection.GetSafeNormal();
+	if (!World || Dir.IsNearlyZero())
+	{
+		return false;
+	}
+
+	const FVector RayEnd = RayOrigin + Dir * UE_OLD_HALF_WORLD_MAX;
+	const FCollisionObjectQueryParams ObjectParams(ECC_WorldStatic);
+
+	auto TracePass = [&](bool bTraceComplex) -> bool
+	{
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(BlenderXformSurfaceSnap), bTraceComplex);
+		Params.MobilityType = EQueryMobilityType::Static;
+
+		for (const TWeakObjectPtr<AActor>& Weak : FullSelection)
+		{
+			if (AActor* Actor = Weak.Get())
+			{
+				Params.AddIgnoredActor(Actor);
+				TArray<AActor*> Attached;
+				Actor->GetAttachedActors(Attached, true, true);
+				Params.AddIgnoredActors(Attached);
+			}
+		}
+
+		// A hidden collision can be the first blocking result. Ignore it and retry so a visible surface
+		// behind it remains reachable, but keep the loop bounded for pathological stacked helpers.
+		for (int32 Attempt = 0; Attempt < 16; ++Attempt)
+		{
+			FHitResult Hit;
+			if (!World->LineTraceSingleByObjectType(Hit, RayOrigin, RayEnd, ObjectParams, Params))
+			{
+				return false;
+			}
+
+			AActor* HitActor = Hit.GetActor();
+			UPrimitiveComponent* HitComponent = Hit.GetComponent();
+			const bool bActorVisible = !HitActor ||
+				(!HitActor->IsHiddenEd() && !HitActor->IsTemporarilyHiddenInEditor(true));
+			const bool bComponentVisible = !HitComponent ||
+				HitComponent->IsVisibleInEditor();
+			FVector Normal = Hit.ImpactNormal.GetSafeNormal();
+
+			if (bActorVisible && bComponentVisible && !Normal.IsNearlyZero())
+			{
+				if (FVector::DotProduct(Normal, Dir) > 0.0)
+				{
+					Normal *= -1.0;
+				}
+				OutHit.bValid = true;
+				OutHit.Point = Hit.ImpactPoint;
+				OutHit.Normal = Normal;
+				return true;
+			}
+
+			if (HitComponent)
+			{
+				Params.AddIgnoredComponent(HitComponent);
+			}
+			else if (HitActor)
+			{
+				Params.AddIgnoredActor(HitActor);
+			}
+			else
+			{
+				return false;
+			}
+		}
+		return false;
+	};
+
+	return TracePass(true) || TracePass(false);
 }
 
 bool FXEditorSink::HasSelection() const
@@ -56,6 +141,7 @@ void FXEditorSink::CaptureSelection()
 {
 	Snapshot.Reset();
 	FullSelection.Reset();
+	CachedSurfaceBounds = FBox(ForceInit);
 	FVector Sum = FVector::ZeroVector;
 	int32 Count = 0;
 
@@ -64,7 +150,7 @@ void FXEditorSink::CaptureSelection()
 		USelection* Sel = GEditor->GetSelectedActors();
 
 		// Collect the selected set first, so we can skip any actor a selected ANCESTOR will move via
-		// attachment — transforming both would translate the child twice.
+		// attachment â€” transforming both would translate the child twice.
 		TSet<AActor*> Selected;
 		for (FSelectionIterator It(*Sel); It; ++It)
 		{
@@ -74,6 +160,23 @@ void FXEditorSink::CaptureSelection()
 			}
 		}
 
+		auto AddSurfaceBounds = [this](AActor* BoundsActor)
+		{
+			if (!BoundsActor)
+			{
+				return;
+			}
+			const FBox CollisionBounds = BoundsActor->GetComponentsBoundingBox(false, false);
+			const FBox VisualBounds = CollisionBounds.IsValid
+				? FBox(ForceInit)
+				: BoundsActor->GetComponentsBoundingBox(true, false);
+			const FBox ActorBounds = PreferredSurfaceBounds(CollisionBounds, VisualBounds);
+			if (ActorBounds.IsValid)
+			{
+				CachedSurfaceBounds += ActorBounds;
+			}
+		};
+
 		for (AActor* Actor : Selected)
 		{
 			if (!CanTransformActor(Actor))
@@ -82,12 +185,20 @@ void FXEditorSink::CaptureSelection()
 			}
 
 			// Every selected actor counts toward the median pivot and must be re-selected after a
-			// cancel — so track them all here, independent of the transform filter below.
+			// cancel â€” so track them all here, independent of the transform filter below.
 			FullSelection.Add(Actor);
 			Sum += Actor->GetActorLocation();
 			++Count;
 
-			// But don't transform an actor a selected ANCESTOR will already move via attachment —
+			AddSurfaceBounds(Actor);
+			TArray<AActor*> AttachedActors;
+			Actor->GetAttachedActors(AttachedActors, true, true);
+			for (AActor* Attached : AttachedActors)
+			{
+				AddSurfaceBounds(Attached);
+			}
+
+			// But don't transform an actor a selected ANCESTOR will already move via attachment â€”
 			// applying to both would translate the child twice.
 			bool bAncestorSelected = false;
 			for (AActor* P = Actor->GetAttachParentActor(); P; P = P->GetAttachParentActor())
@@ -104,9 +215,13 @@ void FXEditorSink::CaptureSelection()
 	}
 
 	CachedPivot = (Count > 0) ? (Sum / Count) : FVector::ZeroVector;
+	if (Count > 0 && !CachedSurfaceBounds.IsValid)
+	{
+		CachedSurfaceBounds = FBox(CachedPivot, CachedPivot);
+	}
 
 	// Snapshot the active actor's local axes now (op start) so a Local constraint stays put even as
-	// this op rotates the actor — reading GetActorQuat() live would drift mid-op.
+	// this op rotates the actor â€” reading GetActorQuat() live would drift mid-op.
 	ActiveBX = FVector::ForwardVector;
 	ActiveBY = FVector::RightVector;
 	ActiveBZ = FVector::UpVector;
@@ -136,7 +251,7 @@ void FXEditorSink::Begin()
 	{
 		if (AActor* Actor = Snap.Actor.Get())
 		{
-			// The transform lives on the root component, so it must be in the transaction too —
+			// The transform lives on the root component, so it must be in the transaction too â€”
 			// modifying only the actor leaves the move/rotate/scale un-undoable.
 			Actor->Modify();
 			if (USceneComponent* Root = Actor->GetRootComponent())
@@ -172,10 +287,10 @@ void FXEditorSink::BeginDuplicate()
 
 	// One transaction spans the duplicate AND the grab, so it's a single undo step. edactDuplicateSelected
 	// opens no transaction of its own (verified against UE 5.7 EditorActor.cpp), so the copy's spawn is
-	// recorded HERE — which is exactly why Cancel()'s Transaction->Cancel() can destroy the copy.
+	// recorded HERE â€” which is exactly why Cancel()'s Transaction->Cancel() can destroy the copy.
 	Transaction = MakeUnique<FScopedTransaction>(LOCTEXT("XformDuplicate", "Blender Duplicate"));
 
-	// Duplicate in place (no grid offset) so the copy starts exactly on the original, then we grab it —
+	// Duplicate in place (no grid offset) so the copy starts exactly on the original, then we grab it â€”
 	// Blender Shift+D. edactDuplicateSelected makes the copies the new selection.
 	if (GUnrealEd && Level)
 	{
@@ -262,12 +377,12 @@ void FXEditorSink::Apply(const FXApplied& In)
 
 		Actor->SetActorTransform(T, false, nullptr, ETeleportType::TeleportPhysics);
 		// Interactive (non-final) move notification so Blueprint actors, lights, and construction
-		// scripts update live during the drag — SetActorTransform alone doesn't trigger them.
+		// scripts update live during the drag â€” SetActorTransform alone doesn't trigger them.
 		Actor->PostEditMove(false);
 	}
 
 	// Make the editor's transform gizmo follow the selection live during the drag. The widget draws
-	// at FEditorModeTools::PivotLocation — a cached value that only refreshes on a selection change —
+	// at FEditorModeTools::PivotLocation â€” a cached value that only refreshes on a selection change â€”
 	// so we re-seat it each Apply. UpdatePivotLocationForSelection re-reads the current actor
 	// transforms and fires no selection delegates / Details-panel refresh (unlike NoteSelectionChange),
 	// so it's cheap enough for the per-mouse-move path; it's also exactly what UE itself calls at the
@@ -317,8 +432,8 @@ void FXEditorSink::Cancel()
 	if (bDuplicated)
 	{
 		// Shift+D cancel = remove the copy entirely (the user's chosen behavior). The copy's spawn and the
-		// grab both live in our transaction, so cancelling it destroys the copies and — because the
-		// transaction also recorded the selection swap — restores the original selection. We deliberately
+		// grab both live in our transaction, so cancelling it destroys the copies and â€” because the
+		// transaction also recorded the selection swap â€” restores the original selection. We deliberately
 		// do NOT restore the snapshot transforms first: those copies are about to cease to exist.
 		bDuplicated = false;
 		if (Transaction.IsValid())
@@ -352,20 +467,20 @@ void FXEditorSink::Cancel()
 		if (AActor* Actor = Snap.Actor.Get())
 		{
 			Actor->SetActorTransform(Snap.Xform, false, nullptr, ETeleportType::TeleportPhysics);
-			Actor->PostEditMove(true); // restored to the original transform — finalize dependent visuals
+			Actor->PostEditMove(true); // restored to the original transform â€” finalize dependent visuals
 		}
 	}
 
 	if (Transaction.IsValid())
 	{
-		Transaction->Cancel(); // discard — nothing lands in the undo buffer
+		Transaction->Cancel(); // discard â€” nothing lands in the undo buffer
 		Transaction.Reset();
 	}
 
 	// Move the gizmo back onto the restored selection: the drag left UE's editor pivot at the
 	// dragged-to location, so without this the transform widget stays where the object was dragged
 	// instead of snapping back with it. (On the macOS Esc path DrainReselect's NoteSelectionChange also
-	// corrects it, but RMB-cancel — and any case where the native deselect doesn't fire — needs this.)
+	// corrects it, but RMB-cancel â€” and any case where the native deselect doesn't fire â€” needs this.)
 	if (GUnrealEd)
 	{
 		GUnrealEd->SetPivotMovedIndependently(false);
@@ -374,13 +489,13 @@ void FXEditorSink::Cancel()
 
 	// Blender keeps the selection after a cancel. On macOS the physical Escape that cancels us is
 	// detected by a hardware poll in the processor's Tick, which runs BEFORE Slate pumps key events
-	// that frame — so UE's native Escape->"SELECT NONE" (bound on the level viewport) deselects our
+	// that frame â€” so UE's native Escape->"SELECT NONE" (bound on the level viewport) deselects our
 	// actors AFTER we cancel, and an immediate re-select here loses the race. Instead, queue the
 	// actors and re-assert them over the next few frames from the processor's Tick (DrainReselect),
 	// which lands after the native deselect. RMB-cancel consumes its own event (no native deselect),
 	// so DrainReselect just sees them still selected and does nothing.
 	// Re-select the FULL original selection (including attached children that were filtered out of the
-	// transform snapshot) — otherwise the native Escape-deselect leaves those children deselected.
+	// transform snapshot) â€” otherwise the native Escape-deselect leaves those children deselected.
 	PendingReselect = FullSelection;
 	ReselectTicksLeft = 3;
 
@@ -442,6 +557,11 @@ void FXEditorSink::DrainReselect()
 FVector FXEditorSink::Pivot() const
 {
 	return CachedPivot;
+}
+
+FBox FXEditorSink::SurfaceBounds() const
+{
+	return CachedSurfaceBounds;
 }
 
 bool FXEditorSink::HasLiveSnapshot() const

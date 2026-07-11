@@ -69,6 +69,18 @@ bool FBlenderXformInputPolicy::ShouldConsumeUnsafeEditorShortcut(const FKey& Key
 	return Key == EKeys::Z || Key == EKeys::Y || Key == EKeys::S;
 }
 
+bool FBlenderXformInputPolicy::ShouldToggleSurfaceSnap(EXMode Mode, const FKey& Key, bool bIsRepeat,
+                                                       bool bShiftDown, bool bControlDown, bool bCommandDown, bool bAltDown)
+{
+	return Mode == EXMode::Move && Key == EKeys::C && !bIsRepeat &&
+		!bShiftDown && !bControlDown && !bCommandDown && !bAltDown;
+}
+
+bool FBlenderXformInputPolicy::HasMovedForSurfaceSnap(const FVector2D& Start, const FVector2D& Now)
+{
+	return FVector2D::DistSquared(Start, Now) > 1.0;
+}
+
 bool FBlenderXformInputProcessor::IsEnabled() const
 {
 	const UBlenderXformSettings* S = GetDefault<UBlenderXformSettings>();
@@ -112,6 +124,7 @@ void FBlenderXformInputProcessor::CaptureStartCursor()
 	// Read the settings-derived feel knobs once per op; per-move we only patch in Ctrl/Shift.
 	CachedBaseTuning = BuildTuning(false, false);
 	StartPixel = ViewportMousePixel(ActiveLevelViewport());
+	bMouseMovedSinceOpStart = false;
 	UpdateFromMouse();
 }
 
@@ -195,6 +208,11 @@ void FBlenderXformInputProcessor::UpdateFromMouse()
 	}
 
 	const FVector2D NowPixel = ViewportMousePixel(VC);
+	if (!bMouseMovedSinceOpStart && FBlenderXformInputPolicy::HasMovedForSurfaceSnap(StartPixel, NowPixel))
+	{
+		bMouseMovedSinceOpStart = true;
+	}
+
 	FVector WorldStart = FVector::ZeroVector;
 	FVector WorldNow = FVector::ZeroVector;
 	if (!DeprojectToPlane(StartPixel, Pivot, CachedCamFwd, WorldStart) ||
@@ -203,7 +221,19 @@ void FBlenderXformInputProcessor::UpdateFromMouse()
 		return;
 	}
 
-	Op.UpdateFromScreen(WorldStart, WorldNow, PivotPixel, StartPixel, NowPixel, CachedCamFwd);
+	FXSurfaceSnapState SurfaceSnap;
+	SurfaceSnap.bEnabled = bSurfaceSnapEnabled;
+	if (bSurfaceSnapEnabled && Op.GetMode() == EXMode::Move && bMouseMovedSinceOpStart && !Op.HasNumeric())
+	{
+		SurfaceSnap.bTraceAttempted = true;
+		FVector RayOrigin, RayDirection;
+		if (DeprojectRay(NowPixel, RayOrigin, RayDirection))
+		{
+			Sink.TraceStaticSurface(VC->GetWorld(), RayOrigin, RayDirection, SurfaceSnap.Hit);
+		}
+	}
+
+	Op.UpdateFromScreen(WorldStart, WorldNow, PivotPixel, StartPixel, NowPixel, CachedCamFwd, SurfaceSnap);
 }
 
 bool FBlenderXformInputProcessor::EnsureViewCache(FLevelEditorViewportClient* VC)
@@ -233,10 +263,20 @@ bool FBlenderXformInputProcessor::EnsureViewCache(FLevelEditorViewportClient* VC
 	return true;
 }
 
+bool FBlenderXformInputProcessor::DeprojectRay(const FVector2D& Pixel, FVector& OutOrigin, FVector& OutDirection) const
+{
+	FSceneView::DeprojectScreenToWorld(Pixel, CachedViewRect, CachedInvViewProj, OutOrigin, OutDirection);
+	OutDirection = OutDirection.GetSafeNormal();
+	return !OutDirection.IsNearlyZero();
+}
+
 bool FBlenderXformInputProcessor::DeprojectToPlane(const FVector2D& Pixel, const FVector& PlanePt, const FVector& PlaneN, FVector& OutWorld) const
 {
 	FVector Origin, Dir;
-	FSceneView::DeprojectScreenToWorld(Pixel, CachedViewRect, CachedInvViewProj, Origin, Dir);
+	if (!DeprojectRay(Pixel, Origin, Dir))
+	{
+		return false;
+	}
 	bool bValid = false;
 	OutWorld = FBlenderXformMath::RayPlaneIntersect(Origin, Dir, PlanePt, PlaneN, bValid);
 	return bValid;
@@ -248,14 +288,24 @@ void FBlenderXformInputProcessor::Tick(const float, FSlateApplication&, TSharedR
 	// native Escape-deselect lands a frame or two after we cancel. No-op when nothing is pending.
 	Sink.DrainReselect();
 
+	if (!IsEnabled())
+	{
+		bSurfaceSnapEnabled = false;
+		if (Op.IsActive())
+		{
+			Op.Cancel();
+		}
+		return;
+	}
+
 	if (!Op.IsActive())
 	{
 		return;
 	}
 
-	// Safety: never leave an op stranded (which would swallow all input). If the toggle went off, the
-	// viewport vanished, or every snapshotted actor was deleted mid-op, cancel and hand control back.
-	if (!IsEnabled() || !ActiveLevelViewport() || !Sink.HasLiveSnapshot())
+	// Safety: never leave an op stranded (which would swallow all input). If the viewport vanished or
+	// every snapshotted actor was deleted mid-op, cancel and hand control back.
+	if (!ActiveLevelViewport() || !Sink.HasLiveSnapshot())
 	{
 		Op.Cancel();
 		return;
@@ -301,6 +351,17 @@ bool FBlenderXformInputProcessor::HandleKeyDownEvent(FSlateApplication&, const F
 		if (InKeyEvent.IsCommandDown() || InKeyEvent.IsControlDown() || InKeyEvent.IsAltDown())
 		{
 			return false;
+		}
+
+		if (K == EKeys::C && Op.GetMode() == EXMode::Move)
+		{
+			if (FBlenderXformInputPolicy::ShouldToggleSurfaceSnap(Op.GetMode(), K, InKeyEvent.IsRepeat(),
+				InKeyEvent.IsShiftDown(), InKeyEvent.IsControlDown(), InKeyEvent.IsCommandDown(), InKeyEvent.IsAltDown()))
+			{
+				bSurfaceSnapEnabled = !bSurfaceSnapEnabled;
+				UpdateFromMouse();
+			}
+			return true;
 		}
 
 		if (K == EKeys::X) { Op.CycleAxis(EXAxis::X, bShift); UpdateFromMouse(); return true; }

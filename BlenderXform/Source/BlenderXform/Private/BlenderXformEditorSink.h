@@ -6,6 +6,7 @@
 
 class AActor;
 class FScopedTransaction;
+class UWorld;
 
 /**
  * Production IXApplySink: applies op previews to the current level-editor selection.
@@ -24,10 +25,13 @@ public:
 	virtual void Commit() override;
 	virtual void Cancel() override;
 	virtual FVector Pivot() const override;
+	virtual FBox SurfaceBounds() const override;
 	virtual void ActiveBasis(FVector& X, FVector& Y, FVector& Z) const override;
 
 	static bool CanTransformActorClass(const UClass* ActorClass);
 	static bool CanTransformActor(const AActor* Actor);
+	static FBox PreferredSurfaceBounds(const FBox& CollisionBounds, const FBox& VisualBounds);
+	bool TraceStaticSurface(UWorld* World, const FVector& RayOrigin, const FVector& RayDirection, FXSurfaceHit& OutHit) const;
 	bool HasSelection() const;
 
 	/**
@@ -56,6 +60,7 @@ private:
 	TArray<FSnap> Snapshot;
 	TUniquePtr<FScopedTransaction> Transaction;
 	FVector CachedPivot = FVector::ZeroVector;
+	FBox CachedSurfaceBounds = FBox(ForceInit);
 
 	// Active actor's local axes, snapshotted at op start so a Local constraint uses a fixed basis
 	// instead of drifting with the live (mid-op) rotation.

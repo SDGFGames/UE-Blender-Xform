@@ -18,6 +18,7 @@ or plane, and confirm or cancel — exactly like Blender.
 - **Clear transforms** — `Alt+G` / `Alt+S` / `Alt+R` instantly reset location / scale / rotation (one undo step).
 - **Duplicate & grab** — `Shift+D` duplicates the selection in place and immediately starts a Move (Blender-style). **Confirm** (Enter/LMB) keeps the copy; **cancel** (Esc/RMB) removes it and re-selects the originals. The whole duplicate+move is one undo step, and you can press `S`/`R`/`X`/`Y`/`Z`/numbers on the copy just like a normal grab.
 - **Snapping (bound to UE)** — snap step sizes come from UE's viewport **Snap Settings** (translate / rotate / scale). When the matching grid-snap toggle is on, transforms snap automatically; hold **Ctrl** to force snapping on demand (Blender-style) even when the toggle is off.
+- **Collision surface snapping (`C`)** — during Move, press **C** once to enable cursor-directed surface placement and press **C** again to disable it. The toggle persists across later `G` and `Shift+D` moves for the editor session. It traces visible static environment collision under the cursor, keeps the selection rigid and its rotation unchanged, respects axis/plane constraints, uses collision bounds with visual-bounds fallback, and returns to ordinary movement when the cursor misses.
 - **Precision (`Shift`)** — hold **Shift** while dragging for fine, slowed control (default 0.1×).
 - **Axis guide lines** — constraining to an axis draws Blender's red/green/blue guide line through the pivot.
 - **Adjustable feel** — `MouseSensitivity` / `RotateSensitivity` tune drag magnitude. (Typed values always stay exact, regardless of snap/sensitivity.)
@@ -36,6 +37,7 @@ or plane, and confirm or cancel — exactly like Blender.
 | `X` / `Y` / `Z` | Constrain to that axis (press again → Local → off) |
 | `Shift`+`X`/`Y`/`Z` | Constrain to the plane perpendicular to that axis |
 | `Ctrl` (hold) | Force snap on demand (uses UE's grid sizes) |
+| `C` (press to toggle during Move) | Enable/disable persistent static collision surface snapping |
 | `Shift` (hold) | Precision: fine, slowed dragging |
 | `0-9` `.` `-` | Type an exact value |
 | `Enter` / `LMB` | Confirm |

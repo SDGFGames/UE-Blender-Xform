@@ -48,6 +48,8 @@ void FBlenderXformOp::Begin(EXMode InMode, IXApplySink& InSink)
 	NumBuf.Empty();
 	bHasNumeric = false;
 	NumVal = 0.0;
+	LastSurfaceSnap = FXSurfaceSnapState();
+	bSurfaceSnapApplied = false;
 
 	if (!bSwitching)
 	{
@@ -77,6 +79,8 @@ void FBlenderXformOp::BeginDuplicate(IXApplySink& InSink)
 	NumBuf.Empty();
 	bHasNumeric = false;
 	NumVal = 0.0;
+	LastSurfaceSnap = FXSurfaceSnapState();
+	bSurfaceSnapApplied = false;
 	bDuplicate = true;
 
 	Sink = &InSink;
@@ -185,7 +189,7 @@ void FBlenderXformOp::SetTuning(const FXTuning& InTuning)
 
 void FBlenderXformOp::UpdateFromScreen(const FVector& WorldStart, const FVector& WorldNow,
                                        const FVector2D& PivotS, const FVector2D& StartS, const FVector2D& NowS,
-                                       const FVector& CamForward)
+                                       const FVector& CamForward, const FXSurfaceSnapState& SurfaceSnap)
 {
 	if (!IsActive())
 	{
@@ -197,6 +201,7 @@ void FBlenderXformOp::UpdateFromScreen(const FVector& WorldStart, const FVector&
 	LastStartS = StartS;
 	LastNowS = NowS;
 	LastCamFwd = CamForward;
+	LastSurfaceSnap = SurfaceSnap;
 	Recompute();
 }
 
@@ -271,9 +276,14 @@ FString FBlenderXformOp::HudString() const
 		}
 	}
 
-	if (bDuplicate)        { S += TEXT(" [copy]"); }
-	if (Tuning.bSnap)      { S += TEXT(" [snap]"); }
-	if (Tuning.bPrecision) { S += TEXT(" [fine]"); }
+	if (bDuplicate)   { S += TEXT(" [copy]"); }
+	if (Tuning.bSnap) { S += TEXT(" [snap]"); }
+	if (Tuning.bPrecision && !bSurfaceSnapApplied) { S += TEXT(" [fine]"); }
+	if (Mode == EXMode::Move && LastSurfaceSnap.bEnabled)
+	{
+		S += (!bHasNumeric && LastSurfaceSnap.bTraceAttempted && !bSurfaceSnapApplied)
+			? TEXT(" [surface:none]") : TEXT(" [surface]");
+	}
 
 	return S;
 }
@@ -326,9 +336,14 @@ FString FBlenderXformOp::CursorTag() const
 		}
 	}
 
-	if (bDuplicate)        { S += TEXT(" [copy]"); }
-	if (Tuning.bSnap)      { S += TEXT(" [snap]"); }
-	if (Tuning.bPrecision) { S += TEXT(" [fine]"); }
+	if (bDuplicate)   { S += TEXT(" [copy]"); }
+	if (Tuning.bSnap) { S += TEXT(" [snap]"); }
+	if (Tuning.bPrecision && !bSurfaceSnapApplied) { S += TEXT(" [fine]"); }
+	if (Mode == EXMode::Move && LastSurfaceSnap.bEnabled)
+	{
+		S += (!bHasNumeric && LastSurfaceSnap.bTraceAttempted && !bSurfaceSnapApplied)
+			? TEXT(" [surface:none]") : TEXT(" [surface]");
+	}
 
 	return S;
 }
@@ -353,6 +368,8 @@ void FBlenderXformOp::Reset()
 	Sink = nullptr;
 	Applied = FXApplied();
 	CachedHud.Empty();
+	LastSurfaceSnap = FXSurfaceSnapState();
+	bSurfaceSnapApplied = false;
 	bDuplicate = false;
 	// Tuning intentionally persists across ops; it is owned/refreshed by the input processor.
 }
@@ -395,13 +412,22 @@ void FBlenderXformOp::Recompute()
 
 	FXApplied A;
 	A.Mode = Mode;
+	bSurfaceSnapApplied = false;
 	A.Pivot = Sink->Pivot();
 
 	switch (Mode)
 	{
 		case EXMode::Move:
-			A.MoveDelta = FBlenderXformMath::MoveDelta(LastWorldStart, LastWorldNow, Con, bHasNumeric, NumVal, Tuning);
+		{
+			const FVector Fallback = FBlenderXformMath::MoveDelta(LastWorldStart, LastWorldNow, Con, bHasNumeric, NumVal, Tuning);
+			A.MoveDelta = Fallback;
+			if (!bHasNumeric && LastSurfaceSnap.bEnabled && LastSurfaceSnap.Hit.bValid)
+			{
+				A.MoveDelta = FBlenderXformSurfaceSnap::SolveMoveDelta(
+					Fallback, A.Pivot, Sink->SurfaceBounds(), Con, Tuning, LastSurfaceSnap.Hit, 0.1, bSurfaceSnapApplied);
+			}
 			break;
+		}
 		case EXMode::Scale:
 		{
 			A.ScaleFac = FBlenderXformMath::ScaleFactors(LastPivotS, LastStartS, LastNowS, Con, bHasNumeric, NumVal, Tuning);

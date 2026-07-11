@@ -1,5 +1,6 @@
 #include "Misc/AutomationTest.h"
 #include "BlenderXformOp.h"
+#include "BlenderXformSurfaceSnap.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -18,6 +19,7 @@ namespace
 		virtual void Commit() override { ++Commits; }
 		virtual void Cancel() override { ++Cancels; }
 		virtual FVector Pivot() const override { return FVector::ZeroVector; }
+		virtual FBox SurfaceBounds() const override { return FBox(FVector(-5), FVector(5)); }
 		virtual void ActiveBasis(FVector& X, FVector& Y, FVector& Z) const override
 		{
 			X = FVector(1, 0, 0); Y = FVector(0, 1, 0); Z = FVector(0, 0, 1);
@@ -207,6 +209,95 @@ bool FBlenderXformOpDuplicateTest::RunTest(const FString&)
 		TestEqual(TEXT("cancel reached the sink"), S.Cancels, 1);
 		TestEqual(TEXT("not committed"), S.Commits, 0);
 		TestFalse(TEXT("op ended"), Op.IsActive());
+	}
+	return true;
+}
+
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformOpSurfaceSnapTest, "BlenderXform.Op.SurfaceSnap",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FBlenderXformOpSurfaceSnapTest::RunTest(const FString&)
+{
+	// Valid hit replaces the ordinary mouse-plane Move delta and advertises the active mode.
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Move, S);
+		FXSurfaceSnapState Surface;
+		Surface.bEnabled = true;
+		Surface.bTraceAttempted = true;
+		Surface.Hit.bValid = true;
+		Surface.Hit.Point = FVector(13, 17, 0);
+		Surface.Hit.Normal = FVector::UpVector;
+		Op.UpdateFromScreen(FVector::ZeroVector, FVector(1, 2, 3),
+			FVector2D::ZeroVector, FVector2D::ZeroVector, FVector2D::ZeroVector, FVector(0, 0, -1), Surface);
+		TestTrue(TEXT("surface hit drives the Move delta"), S.Last().MoveDelta.Equals(FVector(13, 17, 5.1), 1e-3));
+		TestTrue(TEXT("surface hit badge"), Op.CursorTag().Contains(TEXT("[surface]")));
+		TestFalse(TEXT("surface hit is not a miss"), Op.CursorTag().Contains(TEXT("surface:none")));
+	}
+
+	// An attempted miss falls back to ordinary movement and reports the miss without freezing.
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Move, S);
+		FXSurfaceSnapState Surface;
+		Surface.bEnabled = true;
+		Surface.bTraceAttempted = true;
+		Op.UpdateFromScreen(FVector::ZeroVector, FVector(4, 5, 6),
+			FVector2D::ZeroVector, FVector2D::ZeroVector, FVector2D::ZeroVector, FVector(0, 0, -1), Surface);
+		TestTrue(TEXT("surface miss keeps ordinary movement"), S.Last().MoveDelta.Equals(FVector(4, 5, 6), 1e-3));
+		TestTrue(TEXT("surface miss badge"), Op.CursorTag().Contains(TEXT("[surface:none]")));
+	}
+
+	// Armed-before-first-mouse-move is visible but is not called a miss.
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Move, S);
+		FXSurfaceSnapState Surface;
+		Surface.bEnabled = true;
+		Op.UpdateFromScreen(FVector::ZeroVector, FVector::ZeroVector,
+			FVector2D::ZeroVector, FVector2D::ZeroVector, FVector2D::ZeroVector, FVector(0, 0, -1), Surface);
+		TestTrue(TEXT("armed surface badge"), Op.CursorTag().Contains(TEXT("[surface]")));
+		TestFalse(TEXT("armed state is not a miss"), Op.CursorTag().Contains(TEXT("surface:none")));
+	}
+
+	// Numeric movement stays exact even if a valid hit was present.
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Move, S);
+		Op.CycleAxis(EXAxis::Z, false);
+		FXSurfaceSnapState Surface;
+		Surface.bEnabled = true;
+		Surface.bTraceAttempted = true;
+		Surface.Hit.bValid = true;
+		Surface.Hit.Point = FVector(0, 0, 100);
+		Surface.Hit.Normal = FVector::UpVector;
+		Op.UpdateFromScreen(FVector::ZeroVector, FVector::ZeroVector,
+			FVector2D::ZeroVector, FVector2D::ZeroVector, FVector2D::ZeroVector, FVector(0, 0, -1), Surface);
+		Op.PushDigit(TEXT('1'));
+		Op.PushDigit(TEXT('0'));
+		TestTrue(TEXT("numeric Move bypasses surface correction"), S.Last().MoveDelta.Equals(FVector(0, 0, 10), 1e-3));
+		TestTrue(TEXT("enabled state remains visible while typing"), Op.CursorTag().Contains(TEXT("[surface]")));
+		TestFalse(TEXT("numeric mode is not a surface miss"), Op.CursorTag().Contains(TEXT("surface:none")));
+	}
+
+	// Surface state persists outside the Op, but Scale itself never applies or displays it.
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Scale, S);
+		FXSurfaceSnapState Surface;
+		Surface.bEnabled = true;
+		Surface.bTraceAttempted = true;
+		Surface.Hit.bValid = true;
+		Surface.Hit.Point = FVector(0, 0, 100);
+		Surface.Hit.Normal = FVector::UpVector;
+		Op.UpdateFromScreen(FVector::ZeroVector, FVector(10, 0, 0),
+			FVector2D::ZeroVector, FVector2D(10, 0), FVector2D(20, 0), FVector(0, 0, -1), Surface);
+		TestFalse(TEXT("Scale HUD omits surface mode"), Op.CursorTag().Contains(TEXT("surface")));
 	}
 	return true;
 }

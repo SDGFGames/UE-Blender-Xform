@@ -22,6 +22,9 @@ struct FBlenderXformMath
 	 */
 	static FVector ConstrainVector(const FVector& V, const FXConstraint& C);
 
+	/** Apply the active constraint and, when enabled, quantize the result to the Move grid. */
+	static FVector ConstrainAndSnapMove(const FVector& Raw, const FXConstraint& C, const FXTuning& T);
+
 	/**
 	 * World translation delta for a Move op.
 	 *   numeric + single axis -> NumericValue * axisDir   (exact, e.g. G X 5 -> (5,0,0))

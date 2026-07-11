@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "BlenderXformTypes.h"
+#include "BlenderXformSurfaceSnap.h"
 
 /** The preview a modal op produces each update; a sink applies it to the real selection. */
 struct FXApplied
@@ -29,6 +30,7 @@ public:
 	virtual void Commit() = 0;                  // keep the transaction
 	virtual void Cancel() = 0;                  // restore snapshot + cancel the transaction
 	virtual FVector Pivot() const = 0;          // selection median (world)
+	virtual FBox SurfaceBounds() const = 0;     // cached aggregate start bounds for surface contact
 	virtual void ActiveBasis(FVector& X, FVector& Y, FVector& Z) const = 0; // active actor local axes
 };
 
@@ -48,7 +50,8 @@ public:
 	void SetTuning(const FXTuning& InTuning);      // live feel knobs (sensitivity/precision/snap); re-applies
 	void UpdateFromScreen(const FVector& WorldStart, const FVector& WorldNow,
 	                      const FVector2D& PivotS, const FVector2D& StartS, const FVector2D& NowS,
-	                      const FVector& CamForward);
+	                      const FVector& CamForward,
+	                      const FXSurfaceSnapState& SurfaceSnap = FXSurfaceSnapState());
 	void Commit();
 	void Cancel();
 
@@ -78,6 +81,8 @@ private:
 	FXTuning Tuning;        // live feel knobs fed by the input processor
 	FXApplied Applied;      // last preview pushed to the sink (for the HUD live read-out)
 	FString CachedHud;      // HudString() result, refreshed on each Recompute (read every draw frame)
+	FXSurfaceSnapState LastSurfaceSnap; // latest viewport trace state for the active op
+	bool bSurfaceSnapApplied = false;    // solver produced the current Move preview
 	bool bDuplicate = false; // this op is a Shift+D duplicate-grab (HUD badge; the sink's Cancel removes the copy)
 
 	FString NumBuf;
