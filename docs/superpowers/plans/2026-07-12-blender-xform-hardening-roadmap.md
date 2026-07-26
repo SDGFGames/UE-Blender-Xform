@@ -48,6 +48,8 @@
 
 **目标版本建议：** `0.2.0`
 
+**完成状态：** Tasks 1.1–1.6 已实现并提交（commits `5901f91`–`e6fd657`）。自动化验证门已过（32 succeeded / 0 failed / 0 not run）。手动验收待 owner 在编辑器中执行。
+
 **完成定义：** 活动操作只能由发起视口驱动；焦点离开时不会误提交；危险编辑器快捷键不会在开放事务内修改世界；模块卸载会取消操作；锁定或不可编辑 Actor 不会被直接变换；附着 Actor 的 Clear Transform 使用相对语义。
 
 ## Task 1.1：将模态操作绑定到发起视口
@@ -190,7 +192,7 @@
 
 ## Iteration 1 Verification Gate
 
-- [ ] 构建：
+- [x] 构建：
 
 ```powershell
 & 'D:\SDGF_G1_Project\UnrealEngine\Engine\Build\BatchFiles\Build.bat' G1_ProjectEditor Win64 Development '-Project=D:\SDGF_G1_Project\G1_Project\G1_Project.uproject' -WaitMutex -NoHotReloadFromIDE
@@ -198,7 +200,7 @@
 
 Expected: `Result: Succeeded`。
 
-- [ ] 自动化测试：
+- [x] 自动化测试：
 
 ```powershell
 & 'D:\SDGF_G1_Project\UnrealEngine\Engine\Binaries\Win64\UnrealEditor-Cmd.exe' 'D:\SDGF_G1_Project\G1_Project\G1_Project.uproject' -unattended -nop4 -NullRHI '-ExecCmds=Automation RunTests BlenderXform; Quit' '-TestExit=Automation Test Queue Empty' '-ReportOutputPath=D:\SDGF_G1_Project\G1_Project\Saved\Automation\BlenderXformIteration1' -log
@@ -207,7 +209,7 @@ Expected: `Result: Succeeded`。
 Expected: 0 failed、0 not run。
 
 - [ ] 手动验收：单视口、多视口、文本框焦点、点击 Toolbar、Alt+Shift+B、locked actor、locked level、attached actor、Undo/Cancel。
-- [ ] 审核 Git diff，确认没有引入 Iteration 2-4 的功能。
+- [x] 审核 Git diff，确认没有引入 Iteration 2-4 的功能。
 
 ---
 
