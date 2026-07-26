@@ -580,4 +580,68 @@ bool FBlenderXformOpSurfaceAlignTest::RunTest(const FString&)
 	return true;
 }
 
+
+// --- Surface normal-align HUD badges: [align] / [align:none] / [align:locked] (Task D). ---
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformOpSurfaceAlignHudTest, "BlenderXform.Op.SurfaceAlignHud",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FBlenderXformOpSurfaceAlignHudTest::RunTest(const FString&)
+{
+	auto MakeHit = [](const FVector& Point, const FVector& Normal) {
+		FXSurfaceSnapState S;
+		S.bAlignHeld = true;
+		S.bTraceAttempted = true;
+		S.Hit.bValid = true;
+		S.Hit.Point = Point;
+		S.Hit.Normal = Normal;
+		return S;
+	};
+
+	// Applied (Free + held + valid hit) => [align].
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Move, S);
+		Op.UpdateFromScreen(FVector::ZeroVector, FVector(100, 0, 0), FVector2D(0, 0), FVector2D(0, 0), FVector2D(0, 0), FVector(0, 0, -1), MakeHit(FVector(100, 0, 0), FVector(1, 0, 0)));
+		TestTrue(TEXT("applied shows [align]"), Op.Hud().Contains(TEXT("[align]")));
+		TestFalse(TEXT("applied not [align:none]"), Op.Hud().Contains(TEXT("[align:none]")));
+	}
+
+	// Suppressed by axis constraint => [align:locked].
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Move, S);
+		Op.CycleAxis(EXAxis::X, false);
+		Op.UpdateFromScreen(FVector::ZeroVector, FVector(100, 0, 0), FVector2D(0, 0), FVector2D(0, 0), FVector2D(0, 0), FVector(0, 0, -1), MakeHit(FVector(100, 0, 0), FVector(1, 0, 0)));
+		TestTrue(TEXT("axis constraint shows [align:locked]"), Op.Hud().Contains(TEXT("[align:locked]")));
+	}
+
+	// Miss (held, trace attempted, invalid hit) => [align:none].
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Move, S);
+		FXSurfaceSnapState Miss;
+		Miss.bAlignHeld = true;
+		Miss.bTraceAttempted = true;
+		Miss.Hit.bValid = false;
+		Op.UpdateFromScreen(FVector::ZeroVector, FVector(100, 0, 0), FVector2D(0, 0), FVector2D(0, 0), FVector2D(0, 0), FVector(0, 0, -1), Miss);
+		TestTrue(TEXT("miss shows [align:none]"), Op.Hud().Contains(TEXT("[align:none]")));
+		TestFalse(TEXT("miss did not apply align"), Op.LastApplied().bAlignApplied);
+	}
+
+	// Not held => no align badge at all.
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Move, S);
+		FXSurfaceSnapState None; // bAlignHeld false
+		Op.UpdateFromScreen(FVector::ZeroVector, FVector(100, 0, 0), FVector2D(0, 0), FVector2D(0, 0), FVector2D(0, 0), FVector(0, 0, -1), None);
+		TestFalse(TEXT("not held shows no align badge"), Op.Hud().Contains(TEXT("[align")));
+	}
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

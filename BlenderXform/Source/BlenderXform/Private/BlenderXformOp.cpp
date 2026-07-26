@@ -324,6 +324,26 @@ FString FBlenderXformOp::HudString() const
 		S += (!bHasNumeric && LastSurfaceSnap.bTraceAttempted && !bSurfaceSnapApplied)
 			? TEXT(" [surface:none]") : TEXT(" [surface]");
 	}
+	// Surface normal-align (C hold) badges: applied / miss / suppressed-by-constraint.
+	if (Mode == EXMode::Move && LastSurfaceSnap.bAlignHeld && !bHasNumeric)
+	{
+		if (Applied.bAlignApplied)
+		{
+			S += TEXT(" [align]");
+		}
+		else if (Con.Axis != EXAxis::Free)
+		{
+			S += TEXT(" [align:locked]");
+		}
+		else if (LastSurfaceSnap.bTraceAttempted && !LastSurfaceSnap.Hit.bValid)
+		{
+			S += TEXT(" [align:none]");
+		}
+		else
+		{
+			S += TEXT(" [align]"); // held but not yet applied (e.g. cursor hasn't moved)
+		}
+	}
 
 	return S;
 }
@@ -387,6 +407,26 @@ FString FBlenderXformOp::CursorTag() const
 	{
 		S += (!bHasNumeric && LastSurfaceSnap.bTraceAttempted && !bSurfaceSnapApplied)
 			? TEXT(" [surface:none]") : TEXT(" [surface]");
+	}
+	// Surface normal-align (C hold) badges: applied / miss / suppressed-by-constraint.
+	if (Mode == EXMode::Move && LastSurfaceSnap.bAlignHeld && !bHasNumeric)
+	{
+		if (Applied.bAlignApplied)
+		{
+			S += TEXT(" [align]");
+		}
+		else if (Con.Axis != EXAxis::Free)
+		{
+			S += TEXT(" [align:locked]");
+		}
+		else if (LastSurfaceSnap.bTraceAttempted && !LastSurfaceSnap.Hit.bValid)
+		{
+			S += TEXT(" [align:none]");
+		}
+		else
+		{
+			S += TEXT(" [align]"); // held but not yet applied (e.g. cursor hasn't moved)
+		}
 	}
 
 	return S;
