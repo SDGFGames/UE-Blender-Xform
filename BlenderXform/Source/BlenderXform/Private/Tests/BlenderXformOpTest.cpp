@@ -438,4 +438,70 @@ bool FBlenderXformOpRotateAccumulationTest::RunTest(const FString&)
 	return true;
 }
 
+
+// --- Numeric input validity, range and unsupported-context hints (Task 2.3). ---
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformOpNumericValidityTest, "BlenderXform.Op.NumericValidity",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FBlenderXformOpNumericValidityTest::RunTest(const FString&)
+{
+	// Buffer cap: typing 20 nines stops at 16, so the value stays finite and well below inf range.
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Move, S);
+		Op.CycleAxis(EXAxis::X, false);
+		for (int32 i = 0; i < 20; ++i) { Op.PushDigit(TEXT('9')); }
+		const FXApplied& A = Op.LastApplied();
+		TestTrue(TEXT("over-long entry is capped, not inf"), FMath::IsFinite(A.MoveDelta.X));
+		TestTrue(TEXT("capped entry applies on X"), A.MoveDelta.X > 0.0);
+	}
+
+	// Free/Plane Move numeric has no direction: flags [axis required] and blocks Commit.
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Move, S);
+		// No axis lock -> Free; typing a number must NOT silently apply a zero move.
+		Op.PushDigit(TEXT('5'));
+		const FXApplied& A = Op.LastApplied();
+		TestTrue(TEXT("free numeric applies no delta"), A.MoveDelta.IsNearlyZero());
+		const FString Tag = Op.CursorTag();
+		TestTrue(TEXT("free numeric shows [axis required]"), Tag.Contains(TEXT("[axis required]")));
+		// Commit is blocked: the op stays active and the sink is NOT committed.
+		Op.Commit();
+		TestTrue(TEXT("free numeric blocks Commit (op still active)"), Op.IsActive());
+		TestEqual(TEXT("free numeric did not commit the sink"), S.Commits, 0);
+
+		// Picking an axis resolves it and Commit proceeds.
+		Op.CycleAxis(EXAxis::X, false);
+		Op.Commit();
+		TestFalse(TEXT("after an axis, Commit ends the op"), Op.IsActive());
+		TestEqual(TEXT("after an axis, the sink committed"), S.Commits, 1);
+	}
+
+	// Scale: typed 0 is allowed (collapses, with a [zero] warning); typed negative is allowed (mirror).
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Scale, S);
+		Op.PushDigit(TEXT('0'));
+		const FXApplied& A = Op.LastApplied();
+		TestTrue(TEXT("typed zero scale collapses to 0"), FMath::IsNearlyEqual(A.ScaleFac.X, 0.0, 1e-3));
+		TestTrue(TEXT("typed zero shows [zero] warning"), Op.CursorTag().Contains(TEXT("[zero]")));
+		Op.Commit();
+		TestFalse(TEXT("typed zero scale commits (not blocked)"), Op.IsActive());
+
+		FFakeSink S2;
+		FBlenderXformOp Op2;
+		Op2.Begin(EXMode::Scale, S2);
+		Op2.PushDigit(TEXT('-')); Op2.PushDigit(TEXT('2'));
+		TestTrue(TEXT("typed negative scale is allowed (mirror)"),
+			FMath::IsNearlyEqual(Op2.LastApplied().ScaleFac.X, -2.0, 1e-3));
+		TestFalse(TEXT("typed negative shows no [zero] warning"), Op2.CursorTag().Contains(TEXT("[zero]")));
+	}
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

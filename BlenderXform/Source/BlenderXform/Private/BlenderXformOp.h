@@ -87,6 +87,8 @@ private:
 
 	FString NumBuf;
 	bool bHasNumeric = false;
+	bool bNumericInvalid = false;    // parsed value is non-finite or the buffer is malformed (Task 2.3)
+	bool bNumericNeedsAxis = false;  // Free/Plane Move numeric has no direction until an axis is set
 	double NumVal = 0.0;
 
 	FVector LastWorldStart = FVector::ZeroVector;

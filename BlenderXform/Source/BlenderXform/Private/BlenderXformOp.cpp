@@ -47,6 +47,8 @@ void FBlenderXformOp::Begin(EXMode InMode, IXApplySink& InSink)
 	Con = FXConstraint();
 	NumBuf.Empty();
 	bHasNumeric = false;
+	bNumericInvalid = false;
+	bNumericNeedsAxis = false;
 	NumVal = 0.0;
 	LastSurfaceSnap = FXSurfaceSnapState();
 	bSurfaceSnapApplied = false;
@@ -88,6 +90,8 @@ void FBlenderXformOp::BeginDuplicate(IXApplySink& InSink)
 	Con = FXConstraint();
 	NumBuf.Empty();
 	bHasNumeric = false;
+	bNumericInvalid = false;
+	bNumericNeedsAxis = false;
 	NumVal = 0.0;
 	LastSurfaceSnap = FXSurfaceSnapState();
 	bSurfaceSnapApplied = false;
@@ -169,7 +173,12 @@ void FBlenderXformOp::PushDigit(TCHAR Ch)
 	}
 	else if (Ch >= TEXT('0') && Ch <= TEXT('9'))
 	{
-		NumBuf.AppendChar(Ch);
+		// Cap the buffer so an absurdly long entry can't overflow or parse to inf (Task 2.3). The sign
+		// toggle above is excluded, so '-' still works on a full buffer.
+		if (NumBuf.Len() < 16)
+		{
+			NumBuf.AppendChar(Ch);
+		}
 	}
 
 	ParseNumeric();
@@ -227,6 +236,12 @@ void FBlenderXformOp::Commit()
 	{
 		return;
 	}
+	// Task 2.3: a malformed numeric entry or a Free/Plane Move numeric (no axis) has no well-defined
+	// result - block Commit and leave the op active so the user can fix or backspace it.
+	if (bNumericInvalid || bNumericNeedsAxis)
+	{
+		return;
+	}
 	if (Sink)
 	{
 		Sink->Commit();
@@ -279,6 +294,12 @@ FString FBlenderXformOp::HudString() const
 	{
 		// Typed value (exact). Show the buffer as-is so a trailing '.' or '-' is visible while typing.
 		S += FString::Printf(TEXT(" | %s"), *NumBuf);
+		// Task 2.3: surface why a typed entry isn't applying. [invalid] for a non-finite/malformed parse;
+		// [axis required] for a Free/Plane Move numeric (no direction until an axis is picked); [zero] warns
+		// a typed 0 scale collapses the object (negative is allowed - Blender mirror).
+		if (bNumericInvalid) { S += TEXT(" [invalid]"); }
+		else if (bNumericNeedsAxis) { S += TEXT(" [axis required]"); }
+		else if (Mode == EXMode::Scale && bHasNumeric && FMath::IsNearlyZero(NumVal)) { S += TEXT(" [zero]"); }
 	}
 	else
 	{
@@ -340,6 +361,10 @@ FString FBlenderXformOp::CursorTag() const
 	{
 		// Typed value with a caret marking active entry (buffer as-is, so a trailing '.'/'-' shows).
 		AppendSpaced(FString::Printf(TEXT("%s|"), *NumBuf));
+		// Task 2.3: same context flags as the full HUD, kept compact for the cursor tag.
+		if (bNumericInvalid) { AppendSpaced(TEXT("[invalid]")); }
+		else if (bNumericNeedsAxis) { AppendSpaced(TEXT("[axis required]")); }
+		else if (Mode == EXMode::Scale && bHasNumeric && FMath::IsNearlyZero(NumVal)) { AppendSpaced(TEXT("[zero]")); }
 	}
 	else
 	{
@@ -380,6 +405,8 @@ void FBlenderXformOp::Reset()
 	Con = FXConstraint();
 	NumBuf.Empty();
 	bHasNumeric = false;
+	bNumericInvalid = false;
+	bNumericNeedsAxis = false;
 	NumVal = 0.0;
 	Sink = nullptr;
 	Applied = FXApplied();
@@ -395,6 +422,7 @@ void FBlenderXformOp::Reset()
 void FBlenderXformOp::ParseNumeric()
 {
 	bHasNumeric = false;
+	bNumericInvalid = false;
 	for (const TCHAR C : NumBuf)
 	{
 		if (C >= TEXT('0') && C <= TEXT('9'))
@@ -403,7 +431,19 @@ void FBlenderXformOp::ParseNumeric()
 			break;
 		}
 	}
-	NumVal = bHasNumeric ? FCString::Atod(*NumBuf) : 0.0;
+	if (!bHasNumeric)
+	{
+		NumVal = 0.0;
+		return;
+	}
+	// Task 2.3: reject non-finite / malformed parse (e.g. a buffer that overflows double range). An
+	// invalid entry blocks Commit and shows [invalid] until corrected or backspaced.
+	NumVal = FCString::Atod(*NumBuf);
+	if (!FMath::IsFinite(NumVal))
+	{
+		bNumericInvalid = true;
+		NumVal = 0.0;
+	}
 }
 
 void FBlenderXformOp::SetWorldBasis()
@@ -431,12 +471,28 @@ void FBlenderXformOp::Recompute()
 	FXApplied A;
 	A.Mode = Mode;
 	bSurfaceSnapApplied = false;
+	bNumericNeedsAxis = false; // recomputed each pass; set by the Move branch when relevant
 	A.Pivot = Sink->Pivot();
 
 	switch (Mode)
 	{
 		case EXMode::Move:
 		{
+			// Task 2.3: a numeric Move with no single axis (Free or plane) has no direction - flag it for
+			// the [axis required] HUD and don't silently apply a zero delta. An invalid numeric parse
+			// likewise applies nothing and blocks Commit.
+			const bool bNumericMoveNoAxis = bHasNumeric && (Con.Axis == EXAxis::Free || Con.bPlane);
+			if (bHasNumeric && bNumericInvalid)
+			{
+				A.MoveDelta = FVector::ZeroVector;
+				break;
+			}
+			if (bNumericMoveNoAxis)
+			{
+				bNumericNeedsAxis = true;
+				A.MoveDelta = FVector::ZeroVector;
+				break;
+			}
 			const FVector Fallback = FBlenderXformMath::MoveDelta(LastWorldStart, LastWorldNow, Con, bHasNumeric, NumVal, Tuning);
 			A.MoveDelta = Fallback;
 			if (!bHasNumeric && LastSurfaceSnap.bEnabled && LastSurfaceSnap.Hit.bValid)
