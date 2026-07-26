@@ -95,6 +95,7 @@ private:
 	bool bSurfaceSnapEnabled = false;      // session-level C toggle; persists across Commit/Cancel
 	bool bAlignHeld = false;               // transient: C held during Move => surface normal-align (Task C)
 	bool bCSawRepeat = false;              // C press->release discrimination: did a key-repeat fire before release?
+	bool bCursorDirty = false;            // Task 3.1: a mouse move is pending; Tick does at most one update/trace per frame
 	bool bMouseMovedSinceOpStart = false; // prevents an enabled mode from teleporting on the G key-down
 	bool bLastSnapActive = false;  // last snap state (Ctrl || UE grid-snap toggle) + Shift, to re-apply
 	bool bLastShiftDown = false;   // on a stationary change (tap Ctrl, or flip the UE snap toggle)

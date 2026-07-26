@@ -230,6 +230,12 @@ bool FBlenderXformInputProcessor::IsInitiatingViewportLive() const
 
 void FBlenderXformInputProcessor::EndActiveOperation(bool bCommit)
 {
+	// Task 3.1: if a mouse move is pending (Tick hasn't run yet this frame), flush a final preview so the
+	// committed state matches the last cursor position rather than the last Tick's.
+	if (bCommit && bCursorDirty)
+	{
+		UpdateFromMouse();
+	}
 	if (bCommit)
 	{
 		Op.Commit();
@@ -244,6 +250,7 @@ void FBlenderXformInputProcessor::EndActiveOperation(bool bCommit)
 	// Align is a hold-modifier tied to the active Move; it never outlives the op.
 	bAlignHeld = false;
 	bCSawRepeat = false;
+	bCursorDirty = false;
 }
 
 FBlenderXformInputProcessor::~FBlenderXformInputProcessor()
@@ -265,6 +272,7 @@ void FBlenderXformInputProcessor::Shutdown()
 	bSurfaceSnapEnabled = false;
 	bAlignHeld = false;
 	bCSawRepeat = false;
+	bCursorDirty = false;
 	InitiatingViewportClient = nullptr;
 	bViewCacheValid = false;
 	CachedViewVC = nullptr;
@@ -387,6 +395,9 @@ void FBlenderXformInputProcessor::UpdateFromMouse()
 	}
 
 	Op.UpdateFromScreen(WorldStart, WorldNow, PivotPixel, StartPixel, NowPixel, CachedCamFwd, SurfaceSnap);
+	// Task 3.1: a successful update consumes the pending dirty flag. Early-returns above leave it set so
+	// Tick retries next frame (e.g. a transient view-cache miss or a pivot briefly behind the camera).
+	bCursorDirty = false;
 }
 
 bool FBlenderXformInputProcessor::EnsureViewCache(FLevelEditorViewportClient* VC)
@@ -432,8 +443,8 @@ void FBlenderXformInputProcessor::Tick(const float, FSlateApplication&, TSharedR
 	if (!IsEnabled())
 	{
 		bSurfaceSnapEnabled = false;
-	bAlignHeld = false;
-	bCSawRepeat = false;
+		bAlignHeld = false;
+		bCSawRepeat = false;
 		if (Op.IsActive())
 		{
 			EndActiveOperation(false);
@@ -464,12 +475,12 @@ void FBlenderXformInputProcessor::Tick(const float, FSlateApplication&, TSharedR
 		return;
 	}
 
-	// Re-apply the instant the snap state (Ctrl OR the UE grid-snap toggle) or Shift changes, even with
-	// a still cursor (Blender lets you tap Ctrl mid-op to snap in place; flipping UE's snap button mid-op
-	// counts too). Only fires on a state change, so the steady-state per-frame cost stays nil.
+	// Task 3.1: at most one update/trace per frame. Collapses same-frame mouse moves (bCursorDirty) and
+	// a snap/shift state change into a single UpdateFromMouse. Steady-state (no move, no modifier change)
+	// does nothing, so the per-frame cost stays nil.
 	{
 		const FModifierKeysState M = FSlateApplication::Get().GetModifierKeys();
-		if (ComputeSnapActive() != bLastSnapActive || M.IsShiftDown() != bLastShiftDown)
+		if (bCursorDirty || ComputeSnapActive() != bLastSnapActive || M.IsShiftDown() != bLastShiftDown)
 		{
 			UpdateFromMouse();
 		}
@@ -630,8 +641,10 @@ bool FBlenderXformInputProcessor::HandleMouseMoveEvent(FSlateApplication&, const
 {
 	if (Op.IsActive())
 	{
-		UpdateFromMouse();
-		// Don't consume: let the viewport keep its own cursor bookkeeping. The transform is already applied.
+		// Task 3.1: don't update per mouse event (a high-poll mouse fires many per frame, each doing a
+		// deprojection + surface trace). Just mark dirty; Tick collapses same-frame moves into one update.
+		bCursorDirty = true;
+		// Don't consume: let the viewport keep its own cursor bookkeeping.
 	}
 	return false;
 }
