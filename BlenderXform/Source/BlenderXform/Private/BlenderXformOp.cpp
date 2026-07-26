@@ -27,7 +27,10 @@ namespace
 			MatrixNearlyEqual(A.ScaleMat, B.ScaleMat, Tolerance) &&
 			FMath::IsNearlyEqual(A.RotDeg, B.RotDeg, Tolerance) &&
 			A.RotAxis.Equals(B.RotAxis, Tolerance) &&
-			A.Pivot.Equals(B.Pivot, Tolerance);
+			A.Pivot.Equals(B.Pivot, Tolerance) &&
+			A.bAlignApplied == B.bAlignApplied &&
+			A.AlignPivot.Equals(B.AlignPivot, Tolerance) &&
+			(A.AlignQuat.Equals(B.AlignQuat, Tolerance));
 	}
 }
 

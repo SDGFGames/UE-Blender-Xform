@@ -1,5 +1,6 @@
 #include "Misc/AutomationTest.h"
 #include "BlenderXformEditorSink.h"
+#include "BlenderXformMath.h" // AlignUpToNormalQuat (Apply align test)
 
 #include "Editor.h"
 #include "Engine/World.h"
@@ -269,6 +270,81 @@ bool FBlenderXformEditorSinkAttachedAltClearTest::RunTest(const FString&)
 	GEditor->SelectActor(Child, false, false);
 	World->DestroyActor(Child);
 	World->DestroyActor(Parent);
+	return true;
+}
+
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformEditorSinkApplyAlignTest, "BlenderXform.EditorSink.ApplyAlign",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FBlenderXformEditorSinkApplyAlignTest::RunTest(const FString&)
+{
+	// Task B: when an FXApplied carries bAlignApplied, the Move path composes the rotation about
+	// AlignPivot on top of the translation - the actor's Up follows AlignQuat. Verifies the Apply
+	// composition directly (Op wiring is Task C).
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!TestNotNull(TEXT("editor world is available"), World))
+	{
+		return false;
+	}
+
+	auto SpawnWithRoot = [&](const FVector& Loc) -> AActor*
+	{
+		FActorSpawnParameters P;
+		P.ObjectFlags |= RF_Transient;
+		AActor* A = World->SpawnActor<AActor>(AActor::StaticClass(), FTransform(Loc), P);
+		if (A)
+		{
+			UBoxComponent* Box = NewObject<UBoxComponent>(A, NAME_None, RF_Transient);
+			A->AddInstanceComponent(Box);
+			A->SetRootComponent(Box);
+			Box->SetMobility(EComponentMobility::Movable);
+			Box->RegisterComponent();
+		}
+		return A;
+	};
+
+	AActor* Actor = SpawnWithRoot(FVector::ZeroVector);
+	if (!TestNotNull(TEXT("actor spawned"), Actor))
+	{
+		return false;
+	}
+
+	FXEditorSink Sink;
+	if (GEditor) { GEditor->SelectActor(Actor, true, false); }
+	Sink.Begin(); // snapshot the actor + open a transaction
+
+	// No align: a plain move translates only, rotation unchanged (identity).
+	const FQuat IdentityRot = Actor->GetActorQuat();
+	FXApplied Plain;
+	Plain.Mode = EXMode::Move;
+	Plain.MoveDelta = FVector(100.0, 0.0, 0.0);
+	Sink.Apply(Plain);
+	TestTrue(TEXT("plain move translates, no rotation change"),
+		Actor->GetActorLocation().Equals(FVector(100.0, 0.0, 0.0), 1.0) &&
+		Actor->GetActorQuat().Equals(IdentityRot, 1e-3));
+
+	// Align to a wall (+X normal): Up (0,0,1) -> +X, about the contact point (0,0,0).
+	FXApplied Aligned = Plain;
+	Aligned.MoveDelta = FVector::ZeroVector;
+	Aligned.bAlignApplied = true;
+	Aligned.AlignPivot = FVector::ZeroVector;
+	Aligned.AlignQuat = FBlenderXformMath::AlignUpToNormalQuat(FVector(1, 0, 0));
+	Sink.Apply(Aligned);
+	const FVector UpAfter = Actor->GetActorQuat().RotateVector(FVector(0, 0, 1));
+	TestTrue(TEXT("align rotates Up onto the wall normal (+X)"),
+		UpAfter.Equals(FVector(1, 0, 0), 1e-2));
+
+	// Align about a non-origin pivot: the actor (snapshot at origin) orbits the pivot. With pivot=(50,0,0)
+	// and Up->+X (90 deg about Y), the offset (-50,0,0) rotates to (0,0,50), landing at (50,0,50).
+	Actor->SetActorLocation(FVector(0, 0, 0), false, nullptr, ETeleportType::None);
+	FXApplied AP = Aligned;
+	AP.AlignPivot = FVector(50.0, 0.0, 0.0);
+	Sink.Apply(AP);
+	TestTrue(TEXT("align about a pivot orbits the pivot point"),
+		Actor->GetActorLocation().Equals(FVector(50.0, 0.0, 50.0), 1.0));
+
+	if (GEditor) { GEditor->SelectActor(Actor, false, false); }
+	World->DestroyActor(Actor);
 	return true;
 }
 

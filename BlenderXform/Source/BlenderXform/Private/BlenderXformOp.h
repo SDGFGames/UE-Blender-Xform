@@ -14,6 +14,11 @@ struct FXApplied
 	double  RotDeg    = 0.0;                  // Rotate: degrees about RotAxis
 	FVector RotAxis   = FVector::ZeroVector;  // Rotate: world axis (Free => camera forward)
 	FVector Pivot     = FVector::ZeroVector;  // Scale/Rotate pivot (world)
+	// Surface normal-align (Move + C hold): an extra rotation composed about AlignPivot on top of the
+	// Move translation. Identity/not-applied by default so ordinary Move is unchanged.
+	FQuat   AlignQuat   = FQuat::Identity;
+	FVector AlignPivot  = FVector::ZeroVector;
+	bool    bAlignApplied = false;
 };
 
 /**

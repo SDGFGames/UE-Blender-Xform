@@ -392,7 +392,20 @@ void FXEditorSink::Apply(const FXApplied& In)
 		{
 			case EXMode::Move:
 			{
-				T.SetLocation(Snap.Xform.GetLocation() + In.MoveDelta);
+				// Translate from the snapshot, then (if surface normal-align is active) rotate the whole
+				// selection rigidly about the contact point so its Up follows the hit normal. The rotation
+				// is composed AFTER the translation, about AlignPivot (the cursor hit), reusing the Rotate
+				// path's pivot math.
+				FVector Loc = Snap.Xform.GetLocation() + In.MoveDelta;
+				FQuat Rot = Snap.Xform.GetRotation();
+				if (In.bAlignApplied)
+				{
+					const FVector Rel = Loc - In.AlignPivot;
+					Loc = In.AlignPivot + In.AlignQuat.RotateVector(Rel);
+					Rot = (In.AlignQuat * Rot).GetNormalized();
+				}
+				T.SetLocation(Loc);
+				T.SetRotation(Rot);
 				break;
 			}
 			case EXMode::Scale:
