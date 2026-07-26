@@ -7,6 +7,7 @@
 #include "Components/BoxComponent.h"
 #include "LandscapeProxy.h"
 #include "Editor/Transactor.h" // UTransactor::GetUndoCount (undo-depth assertion in destructor test)
+#include "LevelUtils.h"        // FLevelUtils::LockLevel (locked-level denial test)
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -134,6 +135,68 @@ bool FBlenderXformEditorSinkDestructorCancelsOpenTransactionTest::RunTest(const 
 		Actor->GetActorLocation().Equals(OriginalLocation, 1e-2));
 
 	World->DestroyActor(Actor);
+	return true;
+}
+
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformEditorSinkTransformabilityRulesTest, "BlenderXform.EditorSink.TransformabilityRules",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FBlenderXformEditorSinkTransformabilityRulesTest::RunTest(const FString&)
+{
+	// Task 1.5 / D2: one CheckTransformability covers class, location lock and level lock; a mixed
+	// selection with any one denial rejects the whole op (HasSelection strict mode).
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!TestNotNull(TEXT("editor world is available"), World))
+	{
+		return false;
+	}
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.ObjectFlags |= RF_Transient;
+
+	AActor* Plain = World->SpawnActor<AActor>(AActor::StaticClass(), FTransform(FVector(10.0)), SpawnParams);
+	AActor* LocLocked = World->SpawnActor<AActor>(AActor::StaticClass(), FTransform(FVector(20.0)), SpawnParams);
+	if (!TestNotNull(TEXT("plain actor spawned"), Plain) || !TestNotNull(TEXT("loc-locked actor spawned"), LocLocked))
+	{
+		if (Plain) { World->DestroyActor(Plain); }
+		if (LocLocked) { World->DestroyActor(LocLocked); }
+		return false;
+	}
+
+	TestEqual(TEXT("plain editable actor is transformable"),
+		FXEditorSink::CheckTransformability(Plain), ETransformDenialReason::None);
+	TestTrue(TEXT("CanTransformActor agrees for a plain actor"),
+		FXEditorSink::CanTransformActor(Plain));
+
+	// Location-locked actor (Details "Lock Actor Location") must be denied with the right reason.
+	LocLocked->SetLockLocation(true);
+	TestEqual(TEXT("location-locked actor is denied"),
+		FXEditorSink::CheckTransformability(LocLocked), ETransformDenialReason::LocationLocked);
+	TestFalse(TEXT("CanTransformActor rejects a location-locked actor"),
+		FXEditorSink::CanTransformActor(LocLocked));
+	LocLocked->SetLockLocation(false); // restore so teardown is clean
+
+	// Level-locked actor: lock the owning level, expect LevelLocked, then unlock.
+	ULevel* Level = Plain->GetLevel();
+	if (TestNotNull(TEXT("actor has a level"), Level))
+	{
+		const bool bWasLocked = Level->bLocked;
+		Level->bLocked = true;
+		TestEqual(TEXT("actor in a locked level is denied"),
+			FXEditorSink::CheckTransformability(Plain), ETransformDenialReason::LevelLocked);
+		TestFalse(TEXT("CanTransformActor rejects a level-locked actor"),
+			FXEditorSink::CanTransformActor(Plain));
+		Level->bLocked = bWasLocked;
+	}
+
+	// Null actor and Landscape class stay unsupported.
+	TestEqual(TEXT("null actor is unsupported"),
+		FXEditorSink::CheckTransformability(nullptr), ETransformDenialReason::UnsupportedClass);
+	TestFalse(TEXT("landscape proxy class is still rejected by the class rule"),
+		FXEditorSink::CanTransformActorClass(ALandscapeProxy::StaticClass()));
+
+	World->DestroyActor(Plain);
+	World->DestroyActor(LocLocked);
 	return true;
 }
 

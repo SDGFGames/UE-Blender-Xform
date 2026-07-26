@@ -8,6 +8,15 @@ class AActor;
 class FScopedTransaction;
 class UWorld;
 
+/** Why an actor can't be transformed (None = it can). Used for HUD/log deny reasons (Task 1.5). */
+enum class ETransformDenialReason : uint8
+{
+	None,             // transformable
+	UnsupportedClass, // Landscape proxy, null class, etc.
+	LocationLocked,   // actor's "Lock Actor Location" is on
+	LevelLocked,      // the actor's owning level is locked
+};
+
 /**
  * Production IXApplySink: applies op previews to the current level-editor selection.
  * Begin() snapshots every selected actor's transform and opens one FScopedTransaction (so the
@@ -30,6 +39,8 @@ public:
 
 	static bool CanTransformActorClass(const UClass* ActorClass);
 	static bool CanTransformActor(const AActor* Actor);
+	/** Classify why an actor can't be transformed (None = it can). Single source of truth for the rules. */
+	static ETransformDenialReason CheckTransformability(const AActor* Actor);
 	static FBox PreferredSurfaceBounds(const FBox& CollisionBounds, const FBox& VisualBounds);
 	bool TraceStaticSurface(UWorld* World, const FVector& RayOrigin, const FVector& RayDirection, FXSurfaceHit& OutHit) const;
 	bool HasSelection() const;

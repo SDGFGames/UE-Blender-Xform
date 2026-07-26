@@ -10,10 +10,13 @@
 #include "Components/PrimitiveComponent.h"
 #include "Engine/World.h"
 #include "EngineDefines.h"
+#include "LevelUtils.h"        // FLevelUtils::IsLevelLocked
 #include "LandscapeProxy.h"
 #include "ScopedTransaction.h"
 
 #define LOCTEXT_NAMESPACE "BlenderXform"
+
+DEFINE_LOG_CATEGORY_STATIC(LogBlenderXformSink, Verbose, All);
 
 FXEditorSink::~FXEditorSink()
 {
@@ -33,9 +36,28 @@ bool FXEditorSink::CanTransformActorClass(const UClass* ActorClass)
 	return ActorClass && !ActorClass->IsChildOf(ALandscapeProxy::StaticClass());
 }
 
+ETransformDenialReason FXEditorSink::CheckTransformability(const AActor* Actor)
+{
+	// Task 1.5: one eligibility check used by HasSelection/CaptureSelection/ClearComponent/BeginDuplicate.
+	// Mixed selections use strict mode (D2) via HasSelection: any one denial rejects the whole op.
+	if (!Actor || !CanTransformActorClass(Actor->GetClass()))
+	{
+		return ETransformDenialReason::UnsupportedClass;
+	}
+	if (Actor->IsLockLocation())
+	{
+		return ETransformDenialReason::LocationLocked;
+	}
+	if (FLevelUtils::IsLevelLocked(const_cast<AActor*>(Actor)))
+	{
+		return ETransformDenialReason::LevelLocked;
+	}
+	return ETransformDenialReason::None;
+}
+
 bool FXEditorSink::CanTransformActor(const AActor* Actor)
 {
-	return Actor && CanTransformActorClass(Actor->GetClass());
+	return CheckTransformability(Actor) == ETransformDenialReason::None;
 }
 
 FBox FXEditorSink::PreferredSurfaceBounds(const FBox& CollisionBounds, const FBox& VisualBounds)
@@ -138,8 +160,15 @@ bool FXEditorSink::HasSelection() const
 	{
 		if (AActor* Actor = Cast<AActor>(*It))
 		{
-			if (!CanTransformActor(Actor))
+			const ETransformDenialReason Reason = CheckTransformability(Actor);
+			if (Reason != ETransformDenialReason::None)
 			{
+				// D2 strict mode: one non-transformable actor rejects the whole op. Log why (verbose, so it
+				// doesn't spam - HasSelection is polled every frame) so a locked actor/level is explainable.
+				const TCHAR* Why = (Reason == ETransformDenialReason::LocationLocked) ? TEXT("location locked")
+					: (Reason == ETransformDenialReason::LevelLocked) ? TEXT("level locked")
+					: TEXT("unsupported class");
+				UE_LOG(LogBlenderXformSink, Verbose, TEXT("Rejecting transform: '%s' is %s"), *Actor->GetName(), Why);
 				return false;
 			}
 			bHasTransformableActor = true;
