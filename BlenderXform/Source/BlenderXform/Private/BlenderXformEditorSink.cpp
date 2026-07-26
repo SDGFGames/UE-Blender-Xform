@@ -15,7 +15,18 @@
 
 #define LOCTEXT_NAMESPACE "BlenderXform"
 
-FXEditorSink::~FXEditorSink() = default;
+FXEditorSink::~FXEditorSink()
+{
+	// Task 1.4: never let an open transaction be silently finalized by the FScopedTransaction destructor
+	// (which would push the in-progress preview into the undo buffer). If we're torn down mid-op - module
+	// unload, editor exit, Live Coding - cancel it first so nothing lands in undo and the snapshot is
+	// restored. No-op when no transaction is open.
+	if (Transaction.IsValid())
+	{
+		Transaction->Cancel();
+		Transaction.Reset();
+	}
+}
 
 bool FXEditorSink::CanTransformActorClass(const UClass* ActorClass)
 {

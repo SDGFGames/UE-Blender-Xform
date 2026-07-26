@@ -159,6 +159,10 @@ public:
 
 		if (FSlateApplication::IsInitialized() && InputProcessor.IsValid())
 		{
+			// Cancel any in-flight op and drop session state BEFORE unregistering the pre-processor, so a
+			// final Tick can't restart state we're tearing down and no open transaction is left to be
+			// finalized (Task 1.4). Idempotent; no-op if nothing is active.
+			InputProcessor->Shutdown();
 			FSlateApplication::Get().UnregisterInputPreProcessor(InputProcessor);
 		}
 		InputProcessor.Reset();

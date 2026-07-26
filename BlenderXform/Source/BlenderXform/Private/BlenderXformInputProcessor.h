@@ -54,7 +54,7 @@ struct FBlenderXformInputPolicy
 class FBlenderXformInputProcessor : public IInputProcessor
 {
 public:
-	virtual ~FBlenderXformInputProcessor() override = default;
+	virtual ~FBlenderXformInputProcessor() override;
 
 	virtual void Tick(const float DeltaTime, FSlateApplication& SlateApp, TSharedRef<ICursor> Cursor) override;
 	virtual bool HandleKeyDownEvent(FSlateApplication& SlateApp, const FKeyEvent& InKeyEvent) override;
@@ -62,6 +62,13 @@ public:
 	virtual bool HandleMouseMoveEvent(FSlateApplication& SlateApp, const FPointerEvent& MouseEvent) override;
 	virtual bool HandleMouseButtonDownEvent(FSlateApplication& SlateApp, const FPointerEvent& MouseEvent) override;
 	virtual const TCHAR* GetDebugName() const override { return TEXT("BlenderXform"); }
+
+	/**
+	 * Cancel any active op and drop all session state. Idempotent - safe to call from ShutdownModule,
+	 * the destructor, or repeatedly. Called BEFORE the input pre-processor is unregistered so a final
+	 * Tick can't restart state we just tore down (Task 1.4).
+	 */
+	void Shutdown();
 
 	const FBlenderXformOp& GetOp() const { return Op; }
 

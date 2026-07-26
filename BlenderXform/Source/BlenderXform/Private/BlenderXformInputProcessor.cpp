@@ -243,6 +243,28 @@ void FBlenderXformInputProcessor::EndActiveOperation(bool bCommit)
 	InitiatingViewportClient = nullptr;
 }
 
+FBlenderXformInputProcessor::~FBlenderXformInputProcessor()
+{
+	// Belt-and-suspenders: ShutdownModule calls Shutdown() before unregistering us, but make sure a
+	// stray reference (Live Coding, unusual teardown order) can't leave an op active / a transaction open.
+	Shutdown();
+}
+
+void FBlenderXformInputProcessor::Shutdown()
+{
+	// Idempotent teardown. Cancel any active op (Cancel restores the snapshot and discards the
+	// transaction, so no preview Transform or Undo item survives), then drop session state. Safe to call
+	// repeatedly: after the first call there's no active op and nothing left to clear.
+	if (Op.IsActive())
+	{
+		EndActiveOperation(false);
+	}
+	bSurfaceSnapEnabled = false;
+	InitiatingViewportClient = nullptr;
+	bViewCacheValid = false;
+	CachedViewVC = nullptr;
+}
+
 FXTuning FBlenderXformInputProcessor::BuildTuning(bool bSnap, bool bPrecision) const
 {
 	FXTuning T;
