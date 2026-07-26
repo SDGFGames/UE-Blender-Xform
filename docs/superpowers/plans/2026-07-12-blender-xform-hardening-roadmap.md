@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Approved — Iteration 1 authorized (D1–D5 adopted recommended defaults); Iterations 2–4 await per-stage approval per D5.
+**Status:** Approved — Iteration 1 authorized (D1–D5 adopted recommended defaults); Iterations 2–4 await per-stage approval per D5. Deferred-Backlog item "Surface Snap 自动旋转对齐法线" pulled in and approved on 2026-07-26 (spec: `docs/superpowers/specs/2026-07-26-surface-normal-align-design.md`).
 
 **Goal:** 将 BlenderXform 从当前“核心功能可用、单元测试通过”的状态，迭代为输入边界安全、事务可恢复、数学稳定、性能可控、可持续发布的 UE 5.7 编辑器插件。
 

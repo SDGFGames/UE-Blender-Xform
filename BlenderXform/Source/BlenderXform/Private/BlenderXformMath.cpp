@@ -334,3 +334,27 @@ double FBlenderXformMath::WrapDeltaDeg(double PrevAngleDeg, double NowAngleDeg)
 	while (Delta <= -180.0) { Delta += 360.0; }
 	return Delta;
 }
+
+FQuat FBlenderXformMath::AlignUpToNormalQuat(const FVector& N)
+{
+	// Map world Up onto N. The cross product gives the rotation axis (perpendicular to both); its length
+	// is sin(angle), and dot(Up,N) is cos(angle), so acos gives the angle directly.
+	static const FVector Up(0.0, 0.0, 1.0);
+	const FVector n = N.GetSafeNormal();
+	if (n.IsNearlyZero())
+	{
+		return FQuat::Identity;
+	}
+	const double d = FVector::DotProduct(Up, n);
+	if (d > 1.0 - 1e-6)
+	{
+		return FQuat::Identity; // already aligned
+	}
+	if (d < -1.0 + 1e-6)
+	{
+		return FQuat(FVector(1.0, 0.0, 0.0), PI); // 180 deg about world X (deterministic flip axis)
+	}
+	const FVector Axis = FVector::CrossProduct(Up, n).GetSafeNormal();
+	const double Angle = FMath::Acos(d);
+	return FQuat(Axis, Angle);
+}

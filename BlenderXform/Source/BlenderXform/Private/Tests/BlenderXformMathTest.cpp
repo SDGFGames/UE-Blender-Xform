@@ -394,4 +394,46 @@ bool FBlenderXformMathWrapDeltaTest::RunTest(const FString&)
 	return true;
 }
 
+// --- Surface normal-align: rotate world Up onto the hit normal (Task A). ---
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformMathAlignUpTest, "BlenderXform.Math.AlignUpToNormalQuat",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FBlenderXformMathAlignUpTest::RunTest(const FString&)
+{
+	const FVector Up(0, 0, 1);
+
+	// Already aligned -> identity.
+	TestTrue(TEXT("Up -> identity"),
+		FBlenderXformMath::AlignUpToNormalQuat(Up).Equals(FQuat::Identity, 1e-6));
+
+	// Near-Up (1 deg off) must NOT jitter to identity falsely, but 1e-7 under the threshold stays identity.
+	TestTrue(TEXT("1e-7 off Up still identity (no jitter)"),
+		FBlenderXformMath::AlignUpToNormalQuat(FVector(0, 0, 1.0 - 1e-7)).Equals(FQuat::Identity, 1e-6));
+
+	// Floor (Up) handled above; wall (+X normal): Up rotates 90 deg about Y to reach +X.
+	const FQuat QX = FBlenderXformMath::AlignUpToNormalQuat(FVector(1, 0, 0));
+	TestTrue(TEXT("wall +X maps Up to +X"),
+		QX.RotateVector(Up).Equals(FVector(1, 0, 0), 1e-3));
+
+	// Wall -X: Up rotates to -X.
+	TestTrue(TEXT("wall -X maps Up to -X"),
+		FBlenderXformMath::AlignUpToNormalQuat(FVector(-1, 0, 0)).RotateVector(Up).Equals(FVector(-1, 0, 0), 1e-3));
+
+	// 45-degree slope.
+	const FVector Slope45(FVector(0, 1, 1).GetSafeNormal());
+	TestTrue(TEXT("45 deg slope maps Up to slope"),
+		FBlenderXformMath::AlignUpToNormalQuat(Slope45).RotateVector(Up).Equals(Slope45, 1e-3));
+
+	// Ceiling (-Up): 180 deg about world X -> Up lands on -Up.
+	const FQuat QC = FBlenderXformMath::AlignUpToNormalQuat(FVector(0, 0, -1));
+	TestTrue(TEXT("ceiling maps Up to -Up"),
+		QC.RotateVector(Up).Equals(FVector(0, 0, -1), 1e-3));
+
+	// Zero/invalid normal -> identity (safe).
+	TestTrue(TEXT("zero normal -> identity"),
+		FBlenderXformMath::AlignUpToNormalQuat(FVector::ZeroVector).Equals(FQuat::Identity, 1e-6));
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

@@ -117,4 +117,14 @@ struct FBlenderXformMath
 	 * mouse rotation frame-to-frame without the +/-180 jump (Task 2.2).
 	 */
 	static double WrapDeltaDeg(double PrevAngleDeg, double NowAngleDeg);
+
+	/**
+	 * Rotation that maps world Up (0,0,1) onto the surface normal N (normalized internally). Used by
+	 * surface normal-align (Move + C hold): spin the selection so its Up points along the hit normal.
+	 *   N ~ +Up      -> identity
+	 *   N ~ -Up      -> 180 deg about world X (deterministic; the roll axis is arbitrary in v1)
+	 *   otherwise    -> axis = normalize(Up x N), angle = acos(dot(Up,N))
+	 * Returns identity for a zero/invalid normal.
+	 */
+	static FQuat AlignUpToNormalQuat(const FVector& N);
 };
