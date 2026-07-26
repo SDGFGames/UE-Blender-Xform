@@ -110,4 +110,11 @@ struct FBlenderXformMath
 	                             const FVector& AxisWorld, const FVector& CamForward,
 	                             bool bNumeric, double NumericValue,
 	                             const FXTuning& T = FXTuning());
+
+	/**
+	 * Smallest signed delta (degrees, in (-180,180]) from PrevAngle to NowAngle, so a sweep that crosses
+	 * the +/-180 seam (179 -> -179) yields +2, not -358. Angles in degrees. Used by the Op to accumulate
+	 * mouse rotation frame-to-frame without the +/-180 jump (Task 2.2).
+	 */
+	static double WrapDeltaDeg(double PrevAngleDeg, double NowAngleDeg);
 };

@@ -95,4 +95,11 @@ private:
 	FVector2D LastStartS = FVector2D::ZeroVector;
 	FVector2D LastNowS   = FVector2D::ZeroVector;
 	FVector LastCamFwd = FVector(0, 0, -1);
+
+	// Mouse-rotation accumulator (Task 2.2): the per-frame screen angle wraps at +/-180, so recomputing
+	// from (Start,Now) each frame jumps when the cursor crosses the seam. Accumulate the smallest signed
+	// frame-to-frame delta instead. Cleared on Begin/mode-switch/Reset. Numeric rotation bypasses it.
+	double LastScreenDeg = 0.0;     // previous frame's screen angle (degrees); valid when bHaveLastScreenDeg
+	double AccumRotDeg = 0.0;        // accumulated mouse rotation, snapped if snap is on
+	bool bHaveLastScreenDeg = false; // false until the first mouse update seeds LastScreenDeg
 };

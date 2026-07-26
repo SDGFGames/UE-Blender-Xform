@@ -372,4 +372,70 @@ bool FBlenderXformOpCursorTagTest::RunTest(const FString&)
 	return true;
 }
 
+
+// --- Mouse-rotation accumulation: no +/-180 jump, can exceed 360, numeric bypasses it (Task 2.2). ---
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformOpRotateAccumulationTest, "BlenderXform.Op.RotateAccumulation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FBlenderXformOpRotateAccumulationTest::RunTest(const FString&)
+{
+	// Rotate about Z (axis (0,0,1)), camera looking down -Z (CamFwd (0,0,-1)): the axis faces AWAY from
+	// the camera, so Facing < 0 and screen CCW maps to positive rotation (no sign flip).
+	const FVector2D Pivot = FVector2D::ZeroVector;
+	const FVector AxisZ(0, 0, 1);
+	const FVector CamFwd(0, 0, -1);
+
+	auto ScreenAt = [](double Deg) -> FVector2D {
+		const double R = FMath::DegreesToRadians(Deg);
+		return FVector2D(FMath::Cos(R), FMath::Sin(R));
+	};
+
+	// Seed at 179 deg, then sweep to -179 deg. The accumulator must add +2, NOT jump to -179.
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Rotate, S);
+		Op.CycleAxis(EXAxis::Z, false);
+		Op.UpdateFromScreen(FVector::ZeroVector, FVector::ZeroVector, Pivot, ScreenAt(179.0), ScreenAt(179.0), CamFwd);
+		Op.UpdateFromScreen(FVector::ZeroVector, FVector::ZeroVector, Pivot, ScreenAt(179.0), ScreenAt(-179.0), CamFwd);
+		const FXApplied& A = Op.LastApplied();
+		TestTrue(TEXT("+179 -> -179 accumulates ~+2 (no seam jump)"),
+			FMath::IsNearlyEqual(A.RotDeg, 2.0, 1e-3));
+	}
+
+	// Continue past 360 deg: keep turning the same way (NowDeg += 2 each frame, wrapping through the
+	// 0/360 seam). 181 frames of +2 = +362.
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Rotate, S);
+		Op.CycleAxis(EXAxis::Z, false);
+		Op.UpdateFromScreen(FVector::ZeroVector, FVector::ZeroVector, Pivot, ScreenAt(0.0), ScreenAt(0.0), CamFwd);
+		for (int32 i = 1; i <= 181; ++i)
+		{
+			const double Deg = FMath::Fmod(i * 2.0, 360.0); // 2,4,...,358,0,2,...
+			Op.UpdateFromScreen(FVector::ZeroVector, FVector::ZeroVector, Pivot, ScreenAt(0.0), ScreenAt(Deg), CamFwd);
+		}
+		const FXApplied& A = Op.LastApplied();
+		TestTrue(TEXT("accumulator can exceed 360 deg"),
+			FMath::IsNearlyEqual(A.RotDeg, 362.0, 1e-2));
+	}
+
+	// Numeric rotation bypasses the accumulator and stays exact.
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Rotate, S);
+		Op.CycleAxis(EXAxis::Z, false);
+		// Spin the mouse first so the accumulator is non-zero.
+		Op.UpdateFromScreen(FVector::ZeroVector, FVector::ZeroVector, Pivot, ScreenAt(0.0), ScreenAt(90.0), CamFwd);
+		Op.PushDigit(TEXT('4')); Op.PushDigit(TEXT('5'));
+		const FXApplied& A = Op.LastApplied();
+		TestTrue(TEXT("numeric rotation is exact (45)"),
+			FMath::IsNearlyEqual(A.RotDeg, 45.0, 1e-3));
+	}
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

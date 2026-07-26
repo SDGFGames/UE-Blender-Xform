@@ -60,7 +60,17 @@ void FBlenderXformOp::Begin(EXMode InMode, IXApplySink& InSink)
 		LastWorldStart = LastWorldNow = FVector::ZeroVector;
 		LastPivotS = LastStartS = LastNowS = FVector2D::ZeroVector;
 		LastCamFwd = FVector(0, 0, -1);
+		// Fresh rotation accumulator; the first mouse update seeds LastScreenDeg.
+		AccumRotDeg = 0.0;
+		bHaveLastScreenDeg = false;
 		Sink->Begin();
+	}
+	else
+	{
+		// Mode switch INTO Rotate: re-seed the accumulator so it continues from the current cursor
+		// position rather than carrying a stale angle from the previous mode.
+		AccumRotDeg = 0.0;
+		bHaveLastScreenDeg = false;
 	}
 
 	Recompute();
@@ -87,6 +97,8 @@ void FBlenderXformOp::BeginDuplicate(IXApplySink& InSink)
 	LastWorldStart = LastWorldNow = FVector::ZeroVector;
 	LastPivotS = LastStartS = LastNowS = FVector2D::ZeroVector;
 	LastCamFwd = FVector(0, 0, -1);
+	AccumRotDeg = 0.0;
+	bHaveLastScreenDeg = false;
 
 	// The sink duplicates the selection in place and snapshots the COPIES (vs Begin(), which snapshots the
 	// current selection). From here it's an ordinary Move — axis locks, numeric entry, snap, and a later
@@ -122,6 +134,10 @@ void FBlenderXformOp::CycleAxis(EXAxis Axis, bool bShiftPlane)
 		Con.Orient = EXOrient::Global;
 		SetWorldBasis();
 	}
+
+	// An axis change re-frames the rotation; re-seed the accumulator from the next mouse update.
+	AccumRotDeg = 0.0;
+	bHaveLastScreenDeg = false;
 
 	Recompute();
 }
@@ -371,6 +387,8 @@ void FBlenderXformOp::Reset()
 	LastSurfaceSnap = FXSurfaceSnapState();
 	bSurfaceSnapApplied = false;
 	bDuplicate = false;
+	AccumRotDeg = 0.0;
+	bHaveLastScreenDeg = false;
 	// Tuning intentionally persists across ops; it is owned/refreshed by the input processor.
 }
 
@@ -442,7 +460,41 @@ void FBlenderXformOp::Recompute()
 		{
 			const FVector Axis = Con.HasConstraint() ? Con.AxisDir() : LastCamFwd;
 			A.RotAxis = Axis.GetSafeNormal();
-			A.RotDeg = FBlenderXformMath::RotateAngleDeg(LastPivotS, LastStartS, LastNowS, A.RotAxis, LastCamFwd, bHasNumeric, NumVal, Tuning);
+			if (bHasNumeric)
+			{
+				// Numeric is exact and bypasses the accumulator (Task 2.2).
+				A.RotDeg = NumVal;
+				AccumRotDeg = NumVal; // keep the accumulator in sync so a later mouse drag continues from here
+			}
+			else
+			{
+				// Accumulate the smallest signed frame-to-frame screen delta so a sweep across the +/-180
+				// seam (179 -> -179) adds +2 instead of jumping to -179. Facing sign + gain + snap applied
+				// to the per-frame delta, then snap re-quantizes the running total.
+				const FVector2D DStart = LastStartS - LastPivotS;
+				const FVector2D DNow = LastNowS - LastPivotS;
+				if (!DNow.IsNearlyZero())
+				{
+					const double NowDeg = FMath::RadiansToDegrees(FMath::Atan2(DNow.Y, DNow.X));
+					if (bHaveLastScreenDeg)
+					{
+						double FrameDelta = FBlenderXformMath::WrapDeltaDeg(LastScreenDeg, NowDeg);
+						// Screen CCW maps to right-hand rotation about the axis; flip when the axis faces the
+						// camera (points along CamFwd, into the screen).
+						const double Facing = FVector::DotProduct(A.RotAxis, LastCamFwd.GetSafeNormal());
+						if (Facing > 0.0) { FrameDelta = -FrameDelta; }
+						FrameDelta *= Tuning.RotGain();
+						AccumRotDeg += FrameDelta;
+						if (Tuning.bSnap)
+						{
+							AccumRotDeg = FMath::GridSnap(AccumRotDeg, Tuning.RotateSnapDeg);
+						}
+					}
+					LastScreenDeg = NowDeg;
+					bHaveLastScreenDeg = true;
+				}
+				A.RotDeg = AccumRotDeg;
+			}
 			break;
 		}
 		default:

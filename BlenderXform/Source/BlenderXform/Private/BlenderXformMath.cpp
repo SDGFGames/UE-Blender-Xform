@@ -324,3 +324,13 @@ double FBlenderXformMath::RotateAngleDeg(const FVector2D& PivotS, const FVector2
 
 	return Delta;
 }
+
+double FBlenderXformMath::WrapDeltaDeg(double PrevAngleDeg, double NowAngleDeg)
+{
+	// Smallest signed turn from Prev to Now. Wrapping once into (-180,180] is exact because the true
+	// per-frame motion is always < 180 deg; anything outside that is the seam crossing.
+	double Delta = NowAngleDeg - PrevAngleDeg;
+	while (Delta > 180.0) { Delta -= 360.0; }
+	while (Delta <= -180.0) { Delta += 360.0; }
+	return Delta;
+}

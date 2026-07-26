@@ -369,4 +369,29 @@ bool FBlenderXformMathMoveWorldPointsTest::RunTest(const FString&)
 	return true;
 }
 
+// --- Mouse-rotation accumulation: smallest signed frame-to-frame delta (no +/-180 jump). ---
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformMathWrapDeltaTest, "BlenderXform.Math.WrapDeltaDeg",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FBlenderXformMathWrapDeltaTest::RunTest(const FString&)
+{
+	// A small forward sweep: 10 -> 15 = +5.
+	TestTrue(TEXT("small forward sweep"),
+		FMath::IsNearlyEqual(FBlenderXformMath::WrapDeltaDeg(10.0, 15.0), 5.0, 1e-3));
+
+	// Crossing the +180 seam: 179 -> -179 must be +2 (not -358).
+	TestTrue(TEXT("+180 seam crossing yields +2"),
+		FMath::IsNearlyEqual(FBlenderXformMath::WrapDeltaDeg(179.0, -179.0), 2.0, 1e-3));
+
+	// Crossing the -180 seam the other way: -179 -> 179 must be -2 (not +358).
+	TestTrue(TEXT("-180 seam crossing yields -2"),
+		FMath::IsNearlyEqual(FBlenderXformMath::WrapDeltaDeg(-179.0, 179.0), -2.0, 1e-3));
+
+	// A large single-frame jump (shouldn't happen in practice) still wraps to the smallest turn.
+	TestTrue(TEXT("270 deg jump wraps to -90"),
+		FMath::IsNearlyEqual(FBlenderXformMath::WrapDeltaDeg(0.0, 270.0), -90.0, 1e-3));
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
