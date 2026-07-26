@@ -82,17 +82,23 @@ FBox FXEditorSink::PreferredSurfaceBounds(const FBox& CollisionBounds, const FBo
 bool FXEditorSink::TraceStaticSurface(UWorld* World, const FVector& RayOrigin, const FVector& RayDirection, FXSurfaceHit& OutHit) const
 {
 	OutHit = FXSurfaceHit();
+	LastTraceStats = FSurfaceTraceStats();
 	const FVector Dir = RayDirection.GetSafeNormal();
 	if (!World || Dir.IsNearlyZero())
 	{
 		return false;
 	}
 
+	// Task 3.3: bounded hidden-hit retry count as a named constant (was a magic 16). A hidden collision
+	// can be the first blocking result; ignore it and retry so a visible surface behind it stays reachable.
+	constexpr int32 MaxHiddenHitRetries = 16;
+
 	const FVector RayEnd = RayOrigin + Dir * UE_OLD_HALF_WORLD_MAX;
 	const FCollisionObjectQueryParams ObjectParams(ECC_WorldStatic);
 
 	auto TracePass = [&](bool bTraceComplex) -> bool
 	{
+		++LastTraceStats.Passes;
 		FCollisionQueryParams Params(SCENE_QUERY_STAT(BlenderXformSurfaceSnap), bTraceComplex);
 		Params.MobilityType = EQueryMobilityType::Static;
 
@@ -107,10 +113,9 @@ bool FXEditorSink::TraceStaticSurface(UWorld* World, const FVector& RayOrigin, c
 			}
 		}
 
-		// A hidden collision can be the first blocking result. Ignore it and retry so a visible surface
-		// behind it remains reachable, but keep the loop bounded for pathological stacked helpers.
-		for (int32 Attempt = 0; Attempt < 16; ++Attempt)
+		for (int32 Attempt = 0; Attempt < MaxHiddenHitRetries; ++Attempt)
 		{
+			++LastTraceStats.Traces;
 			FHitResult Hit;
 			if (!World->LineTraceSingleByObjectType(Hit, RayOrigin, RayEnd, ObjectParams, Params))
 			{
@@ -153,7 +158,14 @@ bool FXEditorSink::TraceStaticSurface(UWorld* World, const FVector& RayOrigin, c
 		return false;
 	};
 
-	return TracePass(true) || TracePass(false);
+	// Complex first, then simple. Each pass increments LastTraceStats.Passes; retries are counted inside.
+	const bool bHit = TracePass(true) || TracePass(false);
+	if (GetDefault<UBlenderXformSettings>() && GetDefault<UBlenderXformSettings>()->bLogSurfaceTraceStats)
+	{
+		UE_LOG(LogBlenderXformSink, Verbose, TEXT("Surface trace: passes=%d traces=%d hit=%d"),
+			LastTraceStats.Passes, LastTraceStats.Traces, bHit ? 1 : 0);
+	}
+	return bHit;
 }
 
 bool FXEditorSink::HasSelection() const

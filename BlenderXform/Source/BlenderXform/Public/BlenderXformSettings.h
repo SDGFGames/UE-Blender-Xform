@@ -50,6 +50,10 @@ public:
 	UPROPERTY(EditAnywhere, config, Category = "Surface Snap", meta = (ClampMin = "0.0", ClampMax = "50.0"))
 	float SurfaceGap = 0.1f;
 
+	/** Verbose-log surface trace pass/retry counts per frame for perf debugging (Task 3.3). Default off. */
+	UPROPERTY(EditAnywhere, config, Category = "Surface Snap")
+	bool bLogSurfaceTraceStats = false;
+
 	// Snap sizes are intentionally NOT settings here — they are bound to UE's viewport grid (Snap
 	// Settings dropdowns for translate/rotate/scale). Snapping engages when the matching UE grid-snap
 	// toggle is on, or when Ctrl is held (Blender on-demand snap).

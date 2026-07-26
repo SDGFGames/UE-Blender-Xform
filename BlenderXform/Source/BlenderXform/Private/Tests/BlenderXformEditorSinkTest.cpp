@@ -99,6 +99,78 @@ bool FBlenderXformEditorSinkStaticTraceTest::RunTest(const FString&)
 }
 
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformEditorSinkSurfaceTraceRetriesTest, "BlenderXform.EditorSink.SurfaceTraceRetries",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FBlenderXformEditorSinkSurfaceTraceRetriesTest::RunTest(const FString&)
+{
+	// Task 3.3: a hidden blocker in front of a visible target is skipped (retry), and the trace stats
+	// record the extra passes/traces. The selection is ignored by the trace.
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!TestNotNull(TEXT("editor world is available"), World))
+	{
+		return false;
+	}
+
+	auto SpawnBox = [&](const FVector& Loc) -> AActor*
+	{
+		FActorSpawnParameters P;
+		P.ObjectFlags |= RF_Transient;
+		AActor* A = World->SpawnActor<AActor>(AActor::StaticClass(), FTransform(Loc), P);
+		if (A)
+		{
+			UBoxComponent* Box = NewObject<UBoxComponent>(A, NAME_None, RF_Transient);
+			A->AddInstanceComponent(Box);
+			A->SetRootComponent(Box);
+			Box->SetMobility(EComponentMobility::Static);
+			Box->SetBoxExtent(FVector(10.0));
+			Box->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+			Box->SetCollisionObjectType(ECC_WorldStatic);
+			Box->SetCollisionResponseToAllChannels(ECR_Block);
+			Box->SetWorldLocation(Loc);
+			Box->RegisterComponent();
+		}
+		return A;
+	};
+
+	const FVector VisibleLoc(123456.0, 0.0, 0.0);
+	AActor* Visible = SpawnBox(VisibleLoc);
+	AActor* HiddenBlocker = SpawnBox(VisibleLoc - FVector(20.0, 0.0, 0.0)); // in front (toward -X ray origin)
+	if (!TestNotNull(TEXT("visible target spawned"), Visible) || !TestNotNull(TEXT("hidden blocker spawned"), HiddenBlocker))
+	{
+		if (Visible) { World->DestroyActor(Visible); }
+		if (HiddenBlocker) { World->DestroyActor(HiddenBlocker); }
+		return false;
+	}
+	HiddenBlocker->SetIsTemporarilyHiddenInEditor(true);
+
+	// Select the visible target so it's in FullSelection and ignored by the trace - the trace must NOT
+	// hit the selected actor, only the hidden blocker (skipped) ... so with nothing else visible it
+	// misses. First confirm selection-ignore: tracing toward the selected visible target misses.
+	FXEditorSink Sink;
+	if (GEditor) { GEditor->SelectActor(Visible, true, false); }
+	Sink.Begin();
+	FXSurfaceHit Hit;
+	const bool bMissSelected = Sink.TraceStaticSurface(World, VisibleLoc - FVector(100, 0, 0), FVector::ForwardVector, Hit);
+	TestFalse(TEXT("selected actor is ignored by the surface trace"), bMissSelected);
+
+	// Now deselect and trace toward the visible target past the hidden blocker: retry reaches it.
+	if (GEditor) { GEditor->SelectActor(Visible, false, false); }
+	Sink.Begin();
+	const bool bHit = Sink.TraceStaticSurface(World, VisibleLoc - FVector(100, 0, 0), FVector::ForwardVector, Hit);
+	TestTrue(TEXT("hidden blocker is skipped, visible target behind it is hit"), bHit && Hit.bValid);
+	TestTrue(TEXT("hit point is on the visible target"), FMath::IsNearlyEqual(Hit.Point.X, VisibleLoc.X - 10.0, 1.0));
+	// Stats: at least one pass ran, and more than one trace (the hidden blocker caused a retry).
+	TestTrue(TEXT("trace stats recorded >= 1 pass"), Sink.GetLastTraceStats().Passes >= 1);
+	TestTrue(TEXT("trace stats recorded the hidden-hit retry (traces > 1)"),
+		Sink.GetLastTraceStats().Traces > 1);
+
+	if (GEditor) { GEditor->SelectActor(Visible, false, false); }
+	World->DestroyActor(HiddenBlocker);
+	World->DestroyActor(Visible);
+	return true;
+}
+
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformEditorSinkDestructorCancelsOpenTransactionTest, "BlenderXform.EditorSink.DestructorCancelsOpenTransaction",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FBlenderXformEditorSinkDestructorCancelsOpenTransactionTest::RunTest(const FString&)

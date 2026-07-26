@@ -50,6 +50,15 @@ public:
 	bool TraceStaticSurface(UWorld* World, const FVector& RayOrigin, const FVector& RayDirection, FXSurfaceHit& OutHit) const;
 	bool HasSelection() const;
 
+	/** Surface trace stats from the last TraceStaticSurface call (Task 3.3): how many trace passes ran
+	 *  (complex then simple = up to 2) and how many hidden-hit retries inside them. For perf observation. */
+	struct FSurfaceTraceStats
+	{
+		int32 Passes = 0;  // trace passes attempted (1 or 2: complex then simple)
+		int32 Traces = 0;  // total LineTrace calls across all passes (includes hidden-hit retries)
+	};
+	const FSurfaceTraceStats& GetLastTraceStats() const { return LastTraceStats; }
+
 	/**
 	 * Re-assert the post-cancel selection for a few frames. UE's native Escape-deselect (SELECT NONE,
 	 * bound to Escape on the level viewport) lands AFTER our hardware-Escape poll cancels the op, so an
@@ -63,6 +72,9 @@ public:
 
 	/** True while at least one snapshotted actor is still alive (false once they're all deleted mid-op). */
 	bool HasLiveSnapshot() const;
+
+	// Task 3.3: trace stats are written by the const TraceStaticSurface and read after the call.
+	mutable FSurfaceTraceStats LastTraceStats;
 
 private:
 	struct FSnap
