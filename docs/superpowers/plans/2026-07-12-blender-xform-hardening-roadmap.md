@@ -217,6 +217,8 @@ Expected: 0 failed、0 not run。
 
 **目标版本建议：** `0.3.0`
 
+**完成状态：** Tasks 2.1–2.3 已实现并提交（commits `030160b`–`6c5c140`）。自动化验证门已过（37 succeeded / 0 failed / 0 not run）。手动验收（多相机角度的轴/平面 Move、360°+ 旋转、极值 numeric）待 owner 在编辑器中执行。
+
 ## Task 2.1：按约束类型拆分 Move 求解
 
 **Files:**
@@ -271,8 +273,8 @@ Expected: 0 failed、0 not run。
 
 ## Iteration 2 Verification Gate
 
-- [ ] 完整 Windows 构建成功。
-- [ ] 所有 `BlenderXform.Math`、`BlenderXform.Op` 和完整测试集通过。
+- [x] 完整 Windows 构建成功。
+- [x] 所有 `BlenderXform.Math`、`BlenderXform.Op` 和完整测试集通过。
 - [ ] 手动从多种相机角度验证 X/Y/Z axis move、plane move、360°+ rotation、极值 numeric input。
 
 ---
