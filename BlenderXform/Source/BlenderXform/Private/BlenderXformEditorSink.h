@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "UObject/WeakObjectPtr.h"
 #include "BlenderXformOp.h" // IXApplySink, FXApplied
+#include "BlenderXformSettings.h" // EBlenderXformSurfaceBoundsPolicy (Task 3.2)
 
 class AActor;
 class FScopedTransaction;
@@ -41,7 +42,11 @@ public:
 	static bool CanTransformActor(const AActor* Actor);
 	/** Classify why an actor can't be transformed (None = it can). Single source of truth for the rules. */
 	static ETransformDenialReason CheckTransformability(const AActor* Actor);
-	static FBox PreferredSurfaceBounds(const FBox& CollisionBounds, const FBox& VisualBounds);
+	/** Pick the surface-contact bounds per the policy (Task 3.2). Origin returns a zero-volume box at the
+	 *  actor location; Collision/Visual pick the matching bounds (collision wins when both available and
+	 *  policy is Collision, to preserve pre-3.2 behavior). */
+	static FBox PreferredSurfaceBounds(const FBox& CollisionBounds, const FBox& VisualBounds,
+	                                   const FVector& ActorOrigin, EBlenderXformSurfaceBoundsPolicy Policy);
 	bool TraceStaticSurface(UWorld* World, const FVector& RayOrigin, const FVector& RayDirection, FXSurfaceHit& OutHit) const;
 	bool HasSelection() const;
 

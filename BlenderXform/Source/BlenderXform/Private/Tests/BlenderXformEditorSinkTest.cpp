@@ -31,13 +31,28 @@ bool FBlenderXformEditorSinkSurfaceBoundsPolicyTest::RunTest(const FString&)
 	const FBox Collision(FVector(-1, -2, -3), FVector(1, 2, 3));
 	const FBox Visual(FVector(-10), FVector(10));
 	const FBox Invalid(ForceInit);
+	const FVector Origin(5.0, 6.0, 7.0);
 
-	TestTrue(TEXT("collision bounds win when available"),
-		FXEditorSink::PreferredSurfaceBounds(Collision, Visual).Equals(Collision));
-	TestTrue(TEXT("visual bounds are the no-collision fallback"),
-		FXEditorSink::PreferredSurfaceBounds(Invalid, Visual).Equals(Visual));
-	TestFalse(TEXT("no primitive bounds stays invalid"),
-		FXEditorSink::PreferredSurfaceBounds(Invalid, Invalid).IsValid != 0);
+	using P = EBlenderXformSurfaceBoundsPolicy;
+
+	// Collision policy (default, pre-3.2 behavior): collision wins, visual fallback.
+	TestTrue(TEXT("Collision: collision bounds win when available"),
+		FXEditorSink::PreferredSurfaceBounds(Collision, Visual, Origin, P::Collision).Equals(Collision));
+	TestTrue(TEXT("Collision: visual is the no-collision fallback"),
+		FXEditorSink::PreferredSurfaceBounds(Invalid, Visual, Origin, P::Collision).Equals(Visual));
+	TestFalse(TEXT("Collision: no bounds stays invalid"),
+		FXEditorSink::PreferredSurfaceBounds(Invalid, Invalid, Origin, P::Collision).IsValid != 0);
+
+	// Visual policy: visual wins, collision fallback.
+	TestTrue(TEXT("Visual: visual bounds win when available"),
+		FXEditorSink::PreferredSurfaceBounds(Collision, Visual, Origin, P::Visual).Equals(Visual));
+	TestTrue(TEXT("Visual: collision is the no-visual fallback"),
+		FXEditorSink::PreferredSurfaceBounds(Collision, Invalid, Origin, P::Visual).Equals(Collision));
+
+	// Origin policy: a zero-volume point at the actor's pivot.
+	const FBox OriginBox = FXEditorSink::PreferredSurfaceBounds(Collision, Visual, Origin, P::Origin);
+	TestTrue(TEXT("Origin: zero-volume box at the actor location"),
+		OriginBox.Equals(FBox(Origin, Origin), 1e-3));
 	return true;
 }
 

@@ -1,5 +1,6 @@
 #include "BlenderXformEditorSink.h"
 #include "BlenderXformMath.h" // FBlenderXformMath::ScaleTransform
+#include "BlenderXformSettings.h" // GetDefault<UBlenderXformSettings> (Task 3.2 bounds policy/gap)
 
 #include "Editor.h"
 #include "Editor/UnrealEdEngine.h" // UUnrealEdEngine::UpdatePivotLocationForSelection
@@ -60,9 +61,22 @@ bool FXEditorSink::CanTransformActor(const AActor* Actor)
 	return CheckTransformability(Actor) == ETransformDenialReason::None;
 }
 
-FBox FXEditorSink::PreferredSurfaceBounds(const FBox& CollisionBounds, const FBox& VisualBounds)
+FBox FXEditorSink::PreferredSurfaceBounds(const FBox& CollisionBounds, const FBox& VisualBounds,
+                                           const FVector& ActorOrigin, EBlenderXformSurfaceBoundsPolicy Policy)
 {
-	return CollisionBounds.IsValid ? CollisionBounds : VisualBounds;
+	switch (Policy)
+	{
+		case EBlenderXformSurfaceBoundsPolicy::Visual:
+			// Visual first, collision as fallback if visual is unavailable.
+			return VisualBounds.IsValid ? VisualBounds : CollisionBounds;
+		case EBlenderXformSurfaceBoundsPolicy::Origin:
+			// A zero-volume point at the actor's pivot - contact is measured from the origin itself.
+			return FBox(ActorOrigin, ActorOrigin);
+		case EBlenderXformSurfaceBoundsPolicy::Collision:
+		default:
+			// Pre-3.2 behavior: collision first, visual fallback.
+			return CollisionBounds.IsValid ? CollisionBounds : VisualBounds;
+	}
 }
 
 bool FXEditorSink::TraceStaticSurface(UWorld* World, const FVector& RayOrigin, const FVector& RayDirection, FXSurfaceHit& OutHit) const
@@ -206,11 +220,14 @@ void FXEditorSink::CaptureSelection()
 			{
 				return;
 			}
+			const EBlenderXformSurfaceBoundsPolicy Policy = GetDefault<UBlenderXformSettings>()
+				? GetDefault<UBlenderXformSettings>()->SurfaceBoundsPolicy
+				: EBlenderXformSurfaceBoundsPolicy::Collision;
 			const FBox CollisionBounds = BoundsActor->GetComponentsBoundingBox(false, false);
 			const FBox VisualBounds = CollisionBounds.IsValid
 				? FBox(ForceInit)
 				: BoundsActor->GetComponentsBoundingBox(true, false);
-			const FBox ActorBounds = PreferredSurfaceBounds(CollisionBounds, VisualBounds);
+			const FBox ActorBounds = PreferredSurfaceBounds(CollisionBounds, VisualBounds, BoundsActor->GetActorLocation(), Policy);
 			if (ActorBounds.IsValid)
 			{
 				CachedSurfaceBounds += ActorBounds;

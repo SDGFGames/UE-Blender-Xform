@@ -1,5 +1,6 @@
 #include "BlenderXformOp.h"
 #include "BlenderXformMath.h"
+#include "BlenderXformSettings.h" // GetDefault<UBlenderXformSettings> (Task 3.2 surface gap)
 
 namespace
 {
@@ -540,8 +541,9 @@ void FBlenderXformOp::Recompute()
 			A.MoveDelta = Fallback;
 			if (!bHasNumeric && LastSurfaceSnap.bEnabled && LastSurfaceSnap.Hit.bValid)
 			{
+				const double SurfaceGap = GetDefault<UBlenderXformSettings>() ? GetDefault<UBlenderXformSettings>()->SurfaceGap : 0.1;
 				A.MoveDelta = FBlenderXformSurfaceSnap::SolveMoveDelta(
-					Fallback, A.Pivot, Sink->SurfaceBounds(), Con, Tuning, LastSurfaceSnap.Hit, 0.1, bSurfaceSnapApplied);
+					Fallback, A.Pivot, Sink->SurfaceBounds(), Con, Tuning, LastSurfaceSnap.Hit, SurfaceGap, bSurfaceSnapApplied);
 			}
 			// Surface normal-align (C hold): spin the selection so world Up follows the hit normal, about
 			// the contact point. Suppressed by an axis/plane constraint (N3) and by numeric entry.
