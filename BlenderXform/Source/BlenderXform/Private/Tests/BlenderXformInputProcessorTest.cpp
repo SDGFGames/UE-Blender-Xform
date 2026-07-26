@@ -83,4 +83,44 @@ bool FBlenderXformViewportOwnershipPolicyTest::RunTest(const FString&)
 	return true;
 }
 
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformFocusContextPolicyTest, "BlenderXform.Input.FocusContextPolicy",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FBlenderXformFocusContextPolicyTest::RunTest(const FString&)
+{
+	// Task 1.2: a G/S/R op may start only when keyboard focus is in the viewport and NOT in a text
+	// field or modal window. Plain-struct input keeps the policy unit-testable without a live Slate app.
+	auto Ctx = [](bool bVP, bool bText, bool bModal) {
+		FBlenderXformInputContext C;
+		C.bViewportKeyboardFocus = bVP;
+		C.bTextInputFocus = bText;
+		C.bModalWindowActive = bModal;
+		return C;
+	};
+
+	TestTrue (TEXT("viewport focus alone allows start"),
+		FBlenderXformInputPolicy::CanStartInContext(Ctx(true,  false, false)));
+
+	// Typing in a rename/details/search/save field must never start a transform.
+	TestFalse(TEXT("text-entry focus blocks start even with viewport focus"),
+		FBlenderXformInputPolicy::CanStartInContext(Ctx(true,  true,  false)));
+	TestFalse(TEXT("text-entry focus alone blocks start"),
+		FBlenderXformInputPolicy::CanStartInContext(Ctx(false, true,  false)));
+
+	// A modal window (save dialog, etc.) owns input and must block start.
+	TestFalse(TEXT("modal window blocks start even with viewport focus"),
+		FBlenderXformInputPolicy::CanStartInContext(Ctx(true,  false, true)));
+	TestFalse(TEXT("modal window alone blocks start"),
+		FBlenderXformInputPolicy::CanStartInContext(Ctx(false, false, true)));
+
+	// No viewport focus at all blocks start (the key belongs to another panel).
+	TestFalse(TEXT("no viewport focus blocks start"),
+		FBlenderXformInputPolicy::CanStartInContext(Ctx(false, false, false)));
+
+	// Worst case: focus left viewport and landed in a text field under a modal window.
+	TestFalse(TEXT("text + modal together block start"),
+		FBlenderXformInputPolicy::CanStartInContext(Ctx(false, true,  true)));
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

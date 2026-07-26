@@ -12,6 +12,8 @@
 #include "LevelEditorViewport.h"
 #include "SceneView.h"
 #include "UnrealClient.h"
+#include "EditorViewportClient.h" // GetEditorViewportWidget
+#include "SEditorViewport.h"      // SEditorViewport widget handle (keyboard-focus test)
 
 #if PLATFORM_MAC
 // Read the hardware Escape key directly; macOS can consume it before any input pre-processor.
@@ -57,6 +59,32 @@ namespace
 		return FVector2D(-1.0, -1.0);
 	}
 
+	/** True if keyboard focus is on the given viewport's widget or somewhere inside it. */
+	bool IsKeyboardFocusInViewport(const FLevelEditorViewportClient* VC)
+	{
+		if (!VC)
+		{
+			return false;
+		}
+		TSharedPtr<SEditorViewport> VPWidget = VC->GetEditorViewportWidget();
+		if (!VPWidget.IsValid())
+		{
+			return false;
+		}
+		FSlateApplication& Slate = FSlateApplication::Get();
+		TSharedPtr<SWidget> Focused = Slate.GetKeyboardFocusedWidget();
+		if (!Focused.IsValid())
+		{
+			return false;
+		}
+		// The viewport itself, or any widget nested inside it (gizmo, viewport interior).
+		if (Focused.Get() == static_cast<SWidget*>(VPWidget.Get()))
+		{
+			return true;
+		}
+		return Slate.HasFocusedDescendants(StaticCastSharedRef<const SWidget>(VPWidget.ToSharedRef()));
+	}
+
 }
 
 bool FBlenderXformInputPolicy::ShouldConsumeUnsafeEditorShortcut(const FKey& Key, bool bControlDown, bool bCommandDown)
@@ -86,6 +114,18 @@ bool FBlenderXformInputPolicy::OwnsViewport(const FLevelEditorViewportClient* In
 	// Pure pointer identity: an active op belongs only to the viewport it started in. A different
 	// viewport (or none) must not feed mouse updates or confirm/cancel the op.
 	return Initiating != nullptr && Candidate != nullptr && Initiating == Candidate;
+}
+
+bool FBlenderXformInputPolicy::CanStartInContext(const FBlenderXformInputContext& C)
+{
+	// G/S/R must not fire while typing in a text field (Outliner rename, Details, search, save dialog)
+	// or while a modal window is open (it owns input). It also needs the viewport to hold keyboard
+	// focus, so the key clearly belongs to the 3D view rather than whichever panel last had it.
+	if (C.bTextInputFocus || C.bModalWindowActive)
+	{
+		return false;
+	}
+	return C.bViewportKeyboardFocus;
 }
 
 bool FBlenderXformInputProcessor::IsEnabled() const
@@ -123,7 +163,39 @@ bool FBlenderXformInputProcessor::CanStartHere() const
 		return false;
 	}
 
+	// Task 1.2: G/S/R must not fire while focus is in a text field (Outliner rename, Details, search,
+	// save dialog) or a modal window, and must require the viewport to hold keyboard focus - not just
+	// the cursor hovering over it. Keeps native UE behavior when the user is typing elsewhere.
+	if (!FBlenderXformInputPolicy::CanStartInContext(BuildInputContext()))
+	{
+		return false;
+	}
+
 	return Sink.HasSelection();
+}
+
+bool FBlenderXformInputProcessor::IsKeyboardFocusInInitiatingViewport() const
+{
+	return IsKeyboardFocusInViewport(InitiatingViewportClient);
+}
+
+FBlenderXformInputContext FBlenderXformInputProcessor::BuildInputContext() const
+{
+	// Gather Slate focus/modal state into a plain struct so the start/deny decision is unit-testable
+	// (FBlenderXformInputPolicy::CanStartInContext) without a live Slate application.
+	FBlenderXformInputContext C;
+	FSlateApplication& Slate = FSlateApplication::Get();
+	C.bModalWindowActive = Slate.GetActiveModalWindow().IsValid();
+
+	TSharedPtr<SWidget> Focused = Slate.GetKeyboardFocusedWidget();
+	if (Focused.IsValid())
+	{
+		// Matches SEditableText / SEditableTextBox / SMultiLineEditableText(Box) / SInlineEditableTextBlock -
+		// i.e. Outliner rename, Details fields, search boxes, save dialogs. GetTypeAsString drops the S prefix.
+		C.bTextInputFocus = Focused->GetTypeAsString().Contains(TEXT("EditableText"));
+	}
+	C.bViewportKeyboardFocus = IsKeyboardFocusInViewport(ActiveLevelViewport());
+	return C;
 }
 
 void FBlenderXformInputProcessor::CaptureStartCursor()
@@ -350,6 +422,16 @@ void FBlenderXformInputProcessor::Tick(const float, FSlateApplication&, TSharedR
 	// Safety: never leave an op stranded (which would swallow all input). If the bound viewport was
 	// closed or every snapshotted actor was deleted mid-op, cancel and hand control back.
 	if (!IsInitiatingViewportLive() || !Sink.HasLiveSnapshot())
+	{
+		EndActiveOperation(false);
+		return;
+	}
+
+	// D1: if keyboard focus has clearly moved off the initiating viewport (to another panel or text
+	// field), cancel and restore - don't keep transforming based on a viewport the user has left. A
+	// null focused widget (Alt+Tab, transient) is ambiguous, so it alone doesn't cancel.
+	const TSharedPtr<SWidget> Focused = FSlateApplication::Get().GetKeyboardFocusedWidget();
+	if (Focused.IsValid() && !IsKeyboardFocusInInitiatingViewport())
 	{
 		EndActiveOperation(false);
 		return;

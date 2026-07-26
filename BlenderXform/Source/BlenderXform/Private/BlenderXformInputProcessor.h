@@ -11,6 +11,20 @@ struct FPointerEvent;
 class FSlateApplication;
 class FLevelEditorViewportClient;
 
+/**
+ * Keyboard-focus context for a potential/active op, gathered from Slate. Kept as a plain struct so the
+ * start/deny policy below is unit-testable without a live Slate application (Task 1.2).
+ *  - bViewportKeyboardFocus: the keyboard focus is on (or inside) the initiating level viewport widget.
+ *  - bTextInputFocus:        the keyboard focus is on an editable-text widget (rename, details, search, save dialog).
+ *  - bModalWindowActive:     a Slate modal window is open (and would swallow/redirect keys).
+ */
+struct FBlenderXformInputContext
+{
+	bool bViewportKeyboardFocus = false;
+	bool bTextInputFocus = false;
+	bool bModalWindowActive = false;
+};
+
 struct FBlenderXformInputPolicy
 {
 	static bool ShouldConsumeUnsafeEditorShortcut(const FKey& Key, bool bControlDown, bool bCommandDown);
@@ -18,6 +32,8 @@ struct FBlenderXformInputPolicy
 	                                    bool bShiftDown, bool bControlDown, bool bCommandDown, bool bAltDown);
 	static bool HasMovedForSurfaceSnap(const FVector2D& Start, const FVector2D& Now);
 	static bool OwnsViewport(const FLevelEditorViewportClient* Initiating, const FLevelEditorViewportClient* Candidate);
+	/** A G/S/R op may start only when focus is in the viewport and not in a text field or modal window. */
+	static bool CanStartInContext(const FBlenderXformInputContext& C);
 };
 
 /**
@@ -44,7 +60,9 @@ public:
 
 private:
 	bool IsEnabled() const;
-	bool CanStartHere() const;     // enabled + cursor over the active level viewport + has selection
+	bool CanStartHere() const;     // enabled + cursor over the active level viewport + viewport keyboard focus + has selection
+	bool IsKeyboardFocusInInitiatingViewport() const; // keyboard focus is on/inside the op's bound viewport widget
+	FBlenderXformInputContext BuildInputContext() const; // gather Slate focus/modal state into the testable struct
 	void CaptureStartCursor();     // record the pixel + binding viewport where the op began
 	void UpdateFromMouse();        // refresh tuning + deproject current cursor + feed the op
 	void EndActiveOperation(bool bCommit); // single lifecycle exit: Commit/Cancel + release the bound viewport
