@@ -1,7 +1,7 @@
 # Surface Normal-Align Snap Design
 
 - **Date:** 2026-07-26
-- **Status:** Draft for owner review
+- **Status:** Implemented (Tasks A-D committed `f5d1ae4`..`00b9332`); automation gate passed (41 succeeded / 0 failed / 0 not run). Manual acceptance pending.
 - **Engine:** Unreal Engine 5.7 editor plugin
 - **Scope:** Add optional surface-normal alignment to the existing collision surface snap (`C`).
 - **Relation to prior work:** Extends `2026-07-11-collision-surface-snapping-design.md`. Deferred-Backlog item "Surface Snap 自动旋转对齐法线"; pulled in by owner decision on 2026-07-26.
