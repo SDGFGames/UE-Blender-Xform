@@ -27,13 +27,20 @@ struct FBlenderXformInputContext
 
 struct FBlenderXformInputPolicy
 {
-	static bool ShouldConsumeUnsafeEditorShortcut(const FKey& Key, bool bControlDown, bool bCommandDown);
 	static bool ShouldToggleSurfaceSnap(EXMode Mode, const FKey& Key, bool bIsRepeat,
 	                                    bool bShiftDown, bool bControlDown, bool bCommandDown, bool bAltDown);
 	static bool HasMovedForSurfaceSnap(const FVector2D& Start, const FVector2D& Now);
 	static bool OwnsViewport(const FLevelEditorViewportClient* Initiating, const FLevelEditorViewportClient* Candidate);
 	/** A G/S/R op may start only when focus is in the viewport and not in a text field or modal window. */
 	static bool CanStartInContext(const FBlenderXformInputContext& C);
+	/**
+	 * During an active op, should a modifier chord (Ctrl/Cmd/Alt held) be passed through to the editor?
+	 * Default-deny (D3): only the plugin's own toggle hotkey Alt+Shift+B is allowed through - it turns
+	 * the plugin off, and the next Tick cancels the op. Everything else is consumed so it can't mutate
+	 * editor state (Duplicate/Cut/Paste/Select All/Save/...) while our transaction is open.
+	 */
+	static bool ShouldPassThroughModifierChord(const FKey& Key, bool bShiftDown, bool bControlDown,
+	                                            bool bCommandDown, bool bAltDown);
 };
 
 /**

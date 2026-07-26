@@ -87,16 +87,6 @@ namespace
 
 }
 
-bool FBlenderXformInputPolicy::ShouldConsumeUnsafeEditorShortcut(const FKey& Key, bool bControlDown, bool bCommandDown)
-{
-	if (!bControlDown && !bCommandDown)
-	{
-		return false;
-	}
-
-	return Key == EKeys::Z || Key == EKeys::Y || Key == EKeys::S;
-}
-
 bool FBlenderXformInputPolicy::ShouldToggleSurfaceSnap(EXMode Mode, const FKey& Key, bool bIsRepeat,
                                                        bool bShiftDown, bool bControlDown, bool bCommandDown, bool bAltDown)
 {
@@ -126,6 +116,17 @@ bool FBlenderXformInputPolicy::CanStartInContext(const FBlenderXformInputContext
 		return false;
 	}
 	return C.bViewportKeyboardFocus;
+}
+
+bool FBlenderXformInputPolicy::ShouldPassThroughModifierChord(const FKey& Key, bool bShiftDown, bool bControlDown,
+                                                               bool bCommandDown, bool bAltDown)
+{
+	// D3: default-deny. Only the plugin's own toggle hotkey (Alt+Shift+B) is allowed through during an
+	// active op - it disables the plugin, and the next Tick cancels the op. Every other modifier chord
+	// (Ctrl+X/V/W/A/S/Z/Y, Cmd+..., Alt+...) is consumed so it can't Duplicate/Cut/Paste/Select All/Save
+	// or otherwise mutate editor state while our transaction is still open. New pass-throughs must be
+	// added explicitly here AND listed in a test - no blanket allow-all.
+	return Key == EKeys::B && bAltDown && bShiftDown && !bControlDown && !bCommandDown;
 }
 
 bool FBlenderXformInputProcessor::IsEnabled() const
@@ -466,17 +467,15 @@ bool FBlenderXformInputProcessor::HandleKeyDownEvent(FSlateApplication&, const F
 
 	if (Op.IsActive())
 	{
-		if (FBlenderXformInputPolicy::ShouldConsumeUnsafeEditorShortcut(K, InKeyEvent.IsControlDown(), InKeyEvent.IsCommandDown()))
-		{
-			return true;
-		}
-
-		// Let most Cmd/Ctrl/Alt chords through so editor shortcuts (including our Alt+Shift+B toggle) keep
-		// working during a modal op. Undo/redo/save are consumed above because they would mutate editor
-		// state while our transaction is still open.
+		// D3: during an active op, default-deny every modifier chord (Ctrl/Cmd/Alt held) so it can't
+		// mutate editor state - Duplicate/Cut/Paste/Select All/Save/Undo/Redo - while our transaction is
+		// open. Only the plugin's own Alt+Shift+B toggle is allowed through; it disables the plugin and
+		// the next Tick cancels the op. Plain (no-modifier) keys fall through to the modal handling below.
 		if (InKeyEvent.IsCommandDown() || InKeyEvent.IsControlDown() || InKeyEvent.IsAltDown())
 		{
-			return false;
+			return FBlenderXformInputPolicy::ShouldPassThroughModifierChord(
+				K, InKeyEvent.IsShiftDown(), InKeyEvent.IsControlDown(), InKeyEvent.IsCommandDown(), InKeyEvent.IsAltDown())
+				? false : true;
 		}
 
 		if (K == EKeys::C && Op.GetMode() == EXMode::Move)

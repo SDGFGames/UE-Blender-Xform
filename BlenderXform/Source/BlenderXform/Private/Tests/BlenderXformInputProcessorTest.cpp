@@ -3,23 +3,44 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformInputPolicyTest, "BlenderXform.Input.ActiveShortcutPolicy",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformActiveOpModifierChordPolicyTest, "BlenderXform.Input.ActiveOpModifierChordPolicy",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
-bool FBlenderXformInputPolicyTest::RunTest(const FString&)
+bool FBlenderXformActiveOpModifierChordPolicyTest::RunTest(const FString&)
 {
-	TestTrue(TEXT("Ctrl+Z is consumed during a modal op"),
-		FBlenderXformInputPolicy::ShouldConsumeUnsafeEditorShortcut(EKeys::Z, true, false));
-	TestTrue(TEXT("Cmd+Shift+Z is consumed during a modal op"),
-		FBlenderXformInputPolicy::ShouldConsumeUnsafeEditorShortcut(EKeys::Z, false, true));
-	TestTrue(TEXT("Ctrl+Y is consumed during a modal op"),
-		FBlenderXformInputPolicy::ShouldConsumeUnsafeEditorShortcut(EKeys::Y, true, false));
-	TestTrue(TEXT("Ctrl+S is consumed during a modal op"),
-		FBlenderXformInputPolicy::ShouldConsumeUnsafeEditorShortcut(EKeys::S, true, false));
+	// Task 1.3 / D3: during an active op, modifier chords are default-DENIED - only the plugin's own
+	// Alt+Shift+B toggle is passed through (it disables the plugin; the next Tick cancels the op).
+	// Mutating shortcuts (Duplicate/Cut/Paste/Select All/Save/Undo/Redo) must NOT reach the editor
+	// while our transaction is open. New pass-throughs must be enumerated here, never blanket-allowed.
+	TestTrue(TEXT("Alt+Shift+B (toggle hotkey) is passed through"),
+		FBlenderXformInputPolicy::ShouldPassThroughModifierChord(EKeys::B, true, false, false, true));
 
-	TestFalse(TEXT("plain Z remains a modal axis key"),
-		FBlenderXformInputPolicy::ShouldConsumeUnsafeEditorShortcut(EKeys::Z, false, false));
-	TestFalse(TEXT("unrelated Ctrl chords still pass through"),
-		FBlenderXformInputPolicy::ShouldConsumeUnsafeEditorShortcut(EKeys::B, true, false));
+	// Mutating editor chords are consumed (return false = not passed through), regardless of Ctrl vs Cmd.
+	TestFalse(TEXT("Ctrl+Z (undo) is consumed during an active op"),
+		FBlenderXformInputPolicy::ShouldPassThroughModifierChord(EKeys::Z, false, true, false, false));
+	TestFalse(TEXT("Cmd+Shift+Z (redo) is consumed during an active op"),
+		FBlenderXformInputPolicy::ShouldPassThroughModifierChord(EKeys::Z, true, false, true, false));
+	TestFalse(TEXT("Ctrl+Y (redo) is consumed during an active op"),
+		FBlenderXformInputPolicy::ShouldPassThroughModifierChord(EKeys::Y, false, true, false, false));
+	TestFalse(TEXT("Ctrl+S (save) is consumed during an active op"),
+		FBlenderXformInputPolicy::ShouldPassThroughModifierChord(EKeys::S, false, true, false, false));
+	TestFalse(TEXT("Ctrl+X (cut) is consumed during an active op"),
+		FBlenderXformInputPolicy::ShouldPassThroughModifierChord(EKeys::X, false, true, false, false));
+	TestFalse(TEXT("Ctrl+V (paste) is consumed during an active op"),
+		FBlenderXformInputPolicy::ShouldPassThroughModifierChord(EKeys::V, false, true, false, false));
+	TestFalse(TEXT("Ctrl+W is consumed during an active op"),
+		FBlenderXformInputPolicy::ShouldPassThroughModifierChord(EKeys::W, false, true, false, false));
+	TestFalse(TEXT("Ctrl+A (select all) is consumed during an active op"),
+		FBlenderXformInputPolicy::ShouldPassThroughModifierChord(EKeys::A, false, true, false, false));
+	TestFalse(TEXT("Ctrl+D (duplicate) is consumed during an active op"),
+		FBlenderXformInputPolicy::ShouldPassThroughModifierChord(EKeys::D, false, true, false, false));
+
+	// The toggle must be the EXACT chord - variants don't pass through.
+	TestFalse(TEXT("Alt+B without Shift does not pass through"),
+		FBlenderXformInputPolicy::ShouldPassThroughModifierChord(EKeys::B, false, false, false, true));
+	TestFalse(TEXT("Ctrl+Alt+Shift+B does not pass through (Ctrl changes the chord)"),
+		FBlenderXformInputPolicy::ShouldPassThroughModifierChord(EKeys::B, true, true, false, true));
+	TestFalse(TEXT("plain B with no modifiers does not pass through"),
+		FBlenderXformInputPolicy::ShouldPassThroughModifierChord(EKeys::B, false, false, false, false));
 	return true;
 }
 
