@@ -35,7 +35,7 @@
 ## Approval Gates
 
 - [x] **A1 — 批准 Iteration 1：输入、焦点、事务与 Actor 安全护栏。**
-- [ ] **A2 — 批准 Iteration 2：变换数学和数值输入稳定性。**
+- [x] **A2 — 批准 Iteration 2：变换数学和数值输入稳定性。**
 - [ ] **A3 — 批准 Iteration 3：Surface Snap 性能/精度与多视口 HUD。**
 - [ ] **A4 — 批准 Iteration 4：集成测试、CI、文档和发布流程。**
 - [x] **A5 — 批准 Deferred Backlog 仅作为后续候选，不进入本轮加固。**

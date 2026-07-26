@@ -76,6 +76,30 @@ struct FBlenderXformMath
 	                                 const FVector& PlanePoint, const FVector& PlaneNormal, bool& bOutValid);
 
 	/**
+	 * Parameter t (point on the axis line = AxisPoint + t*AxisDir) of the closest approach between a
+	 * ray and the axis LINE. Used for single-axis Move: the mouse ray's nearest point on the constrained
+	 * world axis. Sets bOutValid = false and returns 0.0 when the ray is parallel to the axis (looking
+	 * straight down it - no along-axis motion is visible); a NEAR-parallel ray stays finite and valid.
+	 * RayDir/AxisDir are normalized internally.
+	 */
+	static double RayAxisClosestParam(const FVector& RayOrigin, const FVector& RayDir,
+	                                  const FVector& AxisPoint, const FVector& AxisDir, bool& bOutValid);
+
+	/**
+	 * Per-constraint Start/Now world points for a Move op, from the two mouse rays (Task 2.1):
+	 *   Free        -> intersect each ray with the view plane (normal CamFwd, through Pivot)
+	 *   Plane       -> intersect each ray with the constraint plane (normal = locked axis, through Pivot)
+	 *   Single-axis -> closest approach of each ray to the axis line (Pivot + t*AxisDir)
+	 * Returns false (OutStart/OutNow left at zero) if either point is degenerate (ray parallel to its
+	 * plane/axis, or the hit is behind the camera). The caller still applies gain + constrain/snap, so
+	 * Local basis, precision and grid snap all take effect AFTER this solve.
+	 */
+	static bool MoveWorldPoints(const FVector& StartOrigin, const FVector& StartDir,
+	                            const FVector& NowOrigin, const FVector& NowDir,
+	                            const FVector& Pivot, const FVector& CamFwd,
+	                            const FXConstraint& C, FVector& OutStart, FVector& OutNow);
+
+	/**
 	 * Signed rotation angle in degrees about the constrained axis.
 	 *   numeric -> NumericValue
 	 *   mouse   -> signed screen-space sweep of (NowS-PivotS) relative to (StartS-PivotS),

@@ -87,7 +87,6 @@ private:
 	bool ComputeSnapActive() const;    // Ctrl held OR UE's per-mode grid-snap toggle on (for the op's mode)
 	bool EnsureViewCache(FLevelEditorViewportClient* VC); // (re)compute the scene view at most once per frame
 	bool DeprojectRay(const FVector2D& Pixel, FVector& OutOrigin, FVector& OutDirection) const;
-	bool DeprojectToPlane(const FVector2D& Pixel, const FVector& PlanePt, const FVector& PlaneN, FVector& OutWorld) const;
 
 	FBlenderXformOp Op;
 	FXEditorSink Sink;

@@ -282,4 +282,91 @@ bool FBlenderXformMathRayPlaneTest::RunTest(const FString&)
 	return true;
 }
 
+// --- Per-constraint Move solve: ray vs axis (single-axis) and the three-way MoveWorldPoints. ---
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformMathRayAxisTest, "BlenderXform.Math.RayAxisClosestParam",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FBlenderXformMathRayAxisTest::RunTest(const FString&)
+{
+	bool bValid = false;
+	// Axis = +Z through the origin. Camera looks along +Y (ray dir (0,1,0)), perpendicular to the axis.
+	// Start ray hits the axis at the pivot (t=0); a Now ray shifted +Z by 2 hits at t=2.
+	const double tStart = FBlenderXformMath::RayAxisClosestParam(
+		FVector(0, -10, 0), FVector(0, 1, 0), FVector::ZeroVector, FVector(0, 0, 1), bValid);
+	TestTrue(TEXT("perpendicular ray is valid"), bValid);
+	TestTrue(TEXT("start ray hits pivot (t=0)"), FMath::IsNearlyEqual(tStart, 0.0, 1e-3));
+
+	const double tNow = FBlenderXformMath::RayAxisClosestParam(
+		FVector(0, -10, 2), FVector(0, 1, 0), FVector::ZeroVector, FVector(0, 0, 1), bValid);
+	TestTrue(TEXT("now ray hits t=2"), FMath::IsNearlyEqual(tNow, 2.0, 1e-3));
+
+	// Axis NEAR camera forward (ray ~5.7 deg off the +Z axis): must stay finite & valid, not NaN/Inf
+	// and not silently degenerate - the whole point of the ray-vs-axis solve.
+	const double tNear = FBlenderXformMath::RayAxisClosestParam(
+		FVector(0, 0, -10), FVector(0.1, 0, 1), FVector::ZeroVector, FVector(0, 0, 1), bValid);
+	TestTrue(TEXT("near-axis ray is still valid"), bValid);
+	TestTrue(TEXT("near-axis result is finite"), FMath::IsFinite(tNear));
+
+	// Exactly parallel (ray straight down the axis) -> invalid: no along-axis motion is visible.
+	FBlenderXformMath::RayAxisClosestParam(
+		FVector(1, 0, -10), FVector(0, 0, 1), FVector::ZeroVector, FVector(0, 0, 1), bValid);
+	TestFalse(TEXT("parallel ray is invalid"), bValid);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformMathMoveWorldPointsTest, "BlenderXform.Math.MoveWorldPoints",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FBlenderXformMathMoveWorldPointsTest::RunTest(const FString&)
+{
+	const FVector Pivot = FVector::ZeroVector;
+	FVector WS, WN;
+	bool bOK = false;
+
+	// Free: view plane (normal CamFwd) through the pivot. Top-down camera (CamFwd -Z): a ray straight
+	// down hits the z=0 plane at the pivot; a ray shifted +X hits at (+3,0,0).
+	FXConstraint Free;
+	bOK = FBlenderXformMath::MoveWorldPoints(
+		FVector(0, 0, 10), FVector(0, 0, -1), FVector(3, 0, 10), FVector(0, 0, -1),
+		Pivot, FVector(0, 0, -1), Free, WS, WN);
+	TestTrue(TEXT("free solve is valid"), bOK);
+	TestTrue(TEXT("free start lands on pivot"), WS.Equals(FVector::ZeroVector, 1e-3));
+	TestTrue(TEXT("free now tracks +X"), WN.Equals(FVector(3, 0, 0), 1e-3));
+
+	// Plane (lock X -> YZ plane, normal +X): camera looking +X faces it. Start hits pivot; Now shifted
+	// +Y hits (0,3,0).
+	FXConstraint PlaneX; PlaneX.Axis = EXAxis::X; PlaneX.bPlane = true;
+	bOK = FBlenderXformMath::MoveWorldPoints(
+		FVector(-10, 0, 0), FVector(1, 0, 0), FVector(-10, 3, 0), FVector(1, 0, 0),
+		Pivot, FVector(1, 0, 0), PlaneX, WS, WN);
+	TestTrue(TEXT("plane solve is valid"), bOK);
+	TestTrue(TEXT("plane start lands on pivot"), WS.Equals(FVector::ZeroVector, 1e-3));
+	TestTrue(TEXT("plane now tracks +Y (in the YZ plane)"), WN.Equals(FVector(0, 3, 0), 1e-3));
+
+	// Single-axis (axis +Z): camera along +Y. Start hits pivot (t=0); Now shifted +Z hits (0,0,2).
+	FXConstraint AxisZ; AxisZ.Axis = EXAxis::Z;
+	bOK = FBlenderXformMath::MoveWorldPoints(
+		FVector(0, -10, 0), FVector(0, 1, 0), FVector(0, -10, 2), FVector(0, 1, 0),
+		Pivot, FVector(0, 1, 0), AxisZ, WS, WN);
+	TestTrue(TEXT("single-axis solve is valid"), bOK);
+	TestTrue(TEXT("single-axis start on the axis at pivot"), WS.Equals(FVector::ZeroVector, 1e-3));
+	TestTrue(TEXT("single-axis now on the axis at +2 Z"), WN.Equals(FVector(0, 0, 2), 1e-3));
+
+	// The fix: axis NEAR camera forward. CamFwd ~(0.1,0,1) (5.7 deg off +Z). Two rays nearly along +Z,
+	// offset so the along-axis parameter differs. Must be valid, finite, and produce an ALONG-AXIS,
+	// non-zero delta (the old view-plane deproject collapsed to ~zero here).
+	bOK = FBlenderXformMath::MoveWorldPoints(
+		FVector(0, 0, -10), FVector(0.1, 0, 1), FVector(1, 0, -10), FVector(0.1, 0, 1),
+		Pivot, FVector(0.1, 0, 1), AxisZ, WS, WN);
+	TestTrue(TEXT("near-axis solve is valid (not degenerate)"), bOK);
+	TestTrue(TEXT("near-axis start is finite"),
+		FMath::IsFinite(WS.X) && FMath::IsFinite(WS.Y) && FMath::IsFinite(WS.Z));
+	TestTrue(TEXT("near-axis now is finite"),
+		FMath::IsFinite(WN.X) && FMath::IsFinite(WN.Y) && FMath::IsFinite(WN.Z));
+	const FVector Delta = WN - WS;
+	TestTrue(TEXT("near-axis delta stays on the axis (X,Y ~0)"),
+		FMath::IsNearlyZero(Delta.X, 1e-3) && FMath::IsNearlyZero(Delta.Y, 1e-3));
+	TestTrue(TEXT("near-axis delta is actionable (non-zero)"), FMath::Abs(Delta.Z) > 1.0);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

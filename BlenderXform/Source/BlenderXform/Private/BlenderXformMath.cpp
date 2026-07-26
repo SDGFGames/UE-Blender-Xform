@@ -78,6 +78,89 @@ FVector FBlenderXformMath::RayPlaneIntersect(const FVector& RayOrigin, const FVe
 	return RayOrigin + RayDir * T;
 }
 
+double FBlenderXformMath::RayAxisClosestParam(const FVector& RayOrigin, const FVector& RayDir,
+                                              const FVector& AxisPoint, const FVector& AxisDir, bool& bOutValid)
+{
+	// Closest approach between the ray LINE (P0 + s*D0) and the axis LINE (P1 + t*D1). Solving the
+	// 2x2 normal equations gives t = (a*e - b*d) / (a*c - b*b), with the skew-line denominators.
+	// Returns the parameter along the axis; invalid when the lines are parallel (Denom ~ 0), i.e. the
+	// camera looks straight down the axis and no along-axis motion is visible.
+	const FVector D0 = RayDir.GetSafeNormal();
+	const FVector D1 = AxisDir.GetSafeNormal();
+	if (D0.IsNearlyZero() || D1.IsNearlyZero())
+	{
+		bOutValid = false;
+		return 0.0;
+	}
+	const double a = FVector::DotProduct(D0, D0);
+	const double b = FVector::DotProduct(D0, D1);
+	const double c = FVector::DotProduct(D1, D1);
+	const FVector W0 = RayOrigin - AxisPoint;
+	const double d = FVector::DotProduct(D0, W0);
+	const double e = FVector::DotProduct(D1, W0);
+	const double Denom = a * c - b * b;
+	if (FMath::Abs(Denom) < 1e-6)
+	{
+		bOutValid = false; // ray parallel to the axis (looking straight down it)
+		return 0.0;
+	}
+	bOutValid = true;
+	return (a * e - b * d) / Denom;
+}
+
+bool FBlenderXformMath::MoveWorldPoints(const FVector& StartOrigin, const FVector& StartDir,
+                                        const FVector& NowOrigin, const FVector& NowDir,
+                                        const FVector& Pivot, const FVector& CamFwd,
+                                        const FXConstraint& C, FVector& OutStart, FVector& OutNow)
+{
+	OutStart = FVector::ZeroVector;
+	OutNow = FVector::ZeroVector;
+
+	const FVector ViewN = CamFwd.GetSafeNormal();
+	if (ViewN.IsNearlyZero())
+	{
+		return false;
+	}
+
+	if (C.Axis == EXAxis::Free)
+	{
+		// Free: the view-facing plane through the pivot (Blender's default grab plane).
+		bool bOK = false;
+		OutStart = RayPlaneIntersect(StartOrigin, StartDir, Pivot, ViewN, bOK);
+		if (!bOK) { return false; }
+		OutNow = RayPlaneIntersect(NowOrigin, NowDir, Pivot, ViewN, bOK);
+		return bOK;
+	}
+
+	const FVector AxisN = C.AxisDir().GetSafeNormal();
+	if (AxisN.IsNearlyZero())
+	{
+		return false;
+	}
+
+	if (C.bPlane)
+	{
+		// Plane: the constraint plane (normal = locked axis) through the pivot. Moving the mouse maps to
+		// motion IN that plane, so the locked-axis component is ~0 and ConstrainVector/snap clean up.
+		bool bOK = false;
+		OutStart = RayPlaneIntersect(StartOrigin, StartDir, Pivot, AxisN, bOK);
+		if (!bOK) { return false; }
+		OutNow = RayPlaneIntersect(NowOrigin, NowDir, Pivot, AxisN, bOK);
+		return bOK;
+	}
+
+	// Single-axis: closest approach of each ray to the axis line. Unlike the view-plane deproject, this
+	// stays well-conditioned when the axis points near the camera (only the exactly-parallel case bails).
+	bool bOK = false;
+	const double tStart = RayAxisClosestParam(StartOrigin, StartDir, Pivot, AxisN, bOK);
+	if (!bOK) { return false; }
+	const double tNow = RayAxisClosestParam(NowOrigin, NowDir, Pivot, AxisN, bOK);
+	if (!bOK) { return false; }
+	OutStart = Pivot + AxisN * tStart;
+	OutNow = Pivot + AxisN * tNow;
+	return true;
+}
+
 FVector FBlenderXformMath::MoveDelta(const FVector& WorldStart, const FVector& WorldNow,
                                      const FXConstraint& C, bool bNumeric, double NumericValue,
                                      const FXTuning& T)

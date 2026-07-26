@@ -352,10 +352,20 @@ void FBlenderXformInputProcessor::UpdateFromMouse()
 		bMouseMovedSinceOpStart = true;
 	}
 
+	FVector StartOrigin, StartDir, NowOrigin, NowDir;
+	if (!DeprojectRay(StartPixel, StartOrigin, StartDir) ||
+	    !DeprojectRay(NowPixel, NowOrigin, NowDir))
+	{
+		return;
+	}
+
+	// Task 2.1: per-constraint solve. Free uses the view plane; Plane uses the constraint plane;
+	// single-axis uses ray-vs-axis closest approach, which stays well-conditioned when the axis points
+	// near the camera (the old view-plane deproject collapsed to ~zero along-axis motion there).
 	FVector WorldStart = FVector::ZeroVector;
 	FVector WorldNow = FVector::ZeroVector;
-	if (!DeprojectToPlane(StartPixel, Pivot, CachedCamFwd, WorldStart) ||
-	    !DeprojectToPlane(NowPixel, Pivot, CachedCamFwd, WorldNow))
+	if (!FBlenderXformMath::MoveWorldPoints(StartOrigin, StartDir, NowOrigin, NowDir,
+	                                        Pivot, CachedCamFwd, Op.Constraint(), WorldStart, WorldNow))
 	{
 		return;
 	}
@@ -365,11 +375,8 @@ void FBlenderXformInputProcessor::UpdateFromMouse()
 	if (bSurfaceSnapEnabled && Op.GetMode() == EXMode::Move && bMouseMovedSinceOpStart && !Op.HasNumeric())
 	{
 		SurfaceSnap.bTraceAttempted = true;
-		FVector RayOrigin, RayDirection;
-		if (DeprojectRay(NowPixel, RayOrigin, RayDirection))
-		{
-			Sink.TraceStaticSurface(VC->GetWorld(), RayOrigin, RayDirection, SurfaceSnap.Hit);
-		}
+		// Reuse the Now ray deprojected above rather than deprojecting a second time.
+		Sink.TraceStaticSurface(VC->GetWorld(), NowOrigin, NowDir, SurfaceSnap.Hit);
 	}
 
 	Op.UpdateFromScreen(WorldStart, WorldNow, PivotPixel, StartPixel, NowPixel, CachedCamFwd, SurfaceSnap);
@@ -407,18 +414,6 @@ bool FBlenderXformInputProcessor::DeprojectRay(const FVector2D& Pixel, FVector& 
 	FSceneView::DeprojectScreenToWorld(Pixel, CachedViewRect, CachedInvViewProj, OutOrigin, OutDirection);
 	OutDirection = OutDirection.GetSafeNormal();
 	return !OutDirection.IsNearlyZero();
-}
-
-bool FBlenderXformInputProcessor::DeprojectToPlane(const FVector2D& Pixel, const FVector& PlanePt, const FVector& PlaneN, FVector& OutWorld) const
-{
-	FVector Origin, Dir;
-	if (!DeprojectRay(Pixel, Origin, Dir))
-	{
-		return false;
-	}
-	bool bValid = false;
-	OutWorld = FBlenderXformMath::RayPlaneIntersect(Origin, Dir, PlanePt, PlaneN, bValid);
-	return bValid;
 }
 
 void FBlenderXformInputProcessor::Tick(const float, FSlateApplication&, TSharedRef<ICursor>)
