@@ -81,6 +81,13 @@ bool FBlenderXformInputPolicy::HasMovedForSurfaceSnap(const FVector2D& Start, co
 	return FVector2D::DistSquared(Start, Now) > 1.0;
 }
 
+bool FBlenderXformInputPolicy::OwnsViewport(const FLevelEditorViewportClient* Initiating, const FLevelEditorViewportClient* Candidate)
+{
+	// Pure pointer identity: an active op belongs only to the viewport it started in. A different
+	// viewport (or none) must not feed mouse updates or confirm/cancel the op.
+	return Initiating != nullptr && Candidate != nullptr && Initiating == Candidate;
+}
+
 bool FBlenderXformInputProcessor::IsEnabled() const
 {
 	const UBlenderXformSettings* S = GetDefault<UBlenderXformSettings>();
@@ -123,9 +130,44 @@ void FBlenderXformInputProcessor::CaptureStartCursor()
 {
 	// Read the settings-derived feel knobs once per op; per-move we only patch in Ctrl/Shift.
 	CachedBaseTuning = BuildTuning(false, false);
-	StartPixel = ViewportMousePixel(ActiveLevelViewport());
+	// Bind the op to the viewport it starts in: every later mouse update, deprojection and confirm must
+	// use THIS viewport, so switching to another viewport mid-op can't recompute against a different
+	// camera/projection (which would snap the selection) or confirm on a stray click elsewhere.
+	InitiatingViewportClient = ActiveLevelViewport();
+	StartPixel = ViewportMousePixel(InitiatingViewportClient);
 	bMouseMovedSinceOpStart = false;
 	UpdateFromMouse();
+}
+
+bool FBlenderXformInputProcessor::OwnsViewport(const FLevelEditorViewportClient* VC) const
+{
+	return FBlenderXformInputPolicy::OwnsViewport(InitiatingViewportClient, VC);
+}
+
+bool FBlenderXformInputProcessor::IsInitiatingViewportLive() const
+{
+	if (!InitiatingViewportClient || !GEditor)
+	{
+		return false;
+	}
+	// A closed/destroyed viewport client is removed from the editor's registry, so membership is the
+	// safe liveness check (the raw pointer would dangle otherwise).
+	return GEditor->GetAllViewportClients().Contains(static_cast<FEditorViewportClient*>(InitiatingViewportClient));
+}
+
+void FBlenderXformInputProcessor::EndActiveOperation(bool bCommit)
+{
+	if (bCommit)
+	{
+		Op.Commit();
+	}
+	else
+	{
+		Op.Cancel();
+	}
+	// Release the bound viewport on every exit (commit, cancel, toggle-off, unload) so a stale binding
+	// can't leak into the next op or dereference a viewport about to be destroyed.
+	InitiatingViewportClient = nullptr;
 }
 
 FXTuning FBlenderXformInputProcessor::BuildTuning(bool bSnap, bool bPrecision) const
@@ -186,7 +228,9 @@ bool FBlenderXformInputProcessor::ComputeSnapActive() const
 
 void FBlenderXformInputProcessor::UpdateFromMouse()
 {
-	FLevelEditorViewportClient* VC = ActiveLevelViewport();
+	// Bound to the viewport the op started in (see CaptureStartCursor) - never the currently-active one,
+	// or a mid-op viewport switch would recompute the transform against a different camera/projection.
+	FLevelEditorViewportClient* VC = InitiatingViewportClient;
 	if (!VC || !VC->Viewport || !Op.IsActive())
 	{
 		return;
@@ -293,7 +337,7 @@ void FBlenderXformInputProcessor::Tick(const float, FSlateApplication&, TSharedR
 		bSurfaceSnapEnabled = false;
 		if (Op.IsActive())
 		{
-			Op.Cancel();
+			EndActiveOperation(false);
 		}
 		return;
 	}
@@ -303,11 +347,11 @@ void FBlenderXformInputProcessor::Tick(const float, FSlateApplication&, TSharedR
 		return;
 	}
 
-	// Safety: never leave an op stranded (which would swallow all input). If the viewport vanished or
-	// every snapshotted actor was deleted mid-op, cancel and hand control back.
-	if (!ActiveLevelViewport() || !Sink.HasLiveSnapshot())
+	// Safety: never leave an op stranded (which would swallow all input). If the bound viewport was
+	// closed or every snapshotted actor was deleted mid-op, cancel and hand control back.
+	if (!IsInitiatingViewportLive() || !Sink.HasLiveSnapshot())
 	{
-		Op.Cancel();
+		EndActiveOperation(false);
 		return;
 	}
 
@@ -328,7 +372,7 @@ void FBlenderXformInputProcessor::Tick(const float, FSlateApplication&, TSharedR
 	// kVK_Escape == 53.
 	if (CGEventSourceKeyState(kCGEventSourceStateCombinedSessionState, (CGKeyCode)53))
 	{
-		Op.Cancel();
+		EndActiveOperation(false);
 	}
 #endif
 }
@@ -375,8 +419,8 @@ bool FBlenderXformInputProcessor::HandleKeyDownEvent(FSlateApplication&, const F
 		if (const TCHAR Ch = NumericCharFor(K)) { Op.PushDigit(Ch); return true; }
 		if (K == EKeys::BackSpace) { Op.Backspace(); return true; }
 
-		if (K == EKeys::Enter || K == EKeys::SpaceBar) { Op.Commit(); return true; }
-		if (K == EKeys::Escape) { Op.Cancel(); return true; }
+		if (K == EKeys::Enter || K == EKeys::SpaceBar) { EndActiveOperation(true);  return true; }
+		if (K == EKeys::Escape) { EndActiveOperation(false); return true; }
 
 		// Modal: swallow every other key so editor shortcuts don't fire mid-transform.
 		return true;
@@ -435,7 +479,7 @@ bool FBlenderXformInputProcessor::HandleKeyUpEvent(FSlateApplication&, const FKe
 	// reaches input pre-processors, so also honor it on key-up. RMB already cancels too.
 	if (Op.IsActive() && InKeyEvent.GetKey() == EKeys::Escape)
 	{
-		Op.Cancel();
+		EndActiveOperation(false);
 		return true;
 	}
 	return false;
@@ -457,8 +501,15 @@ bool FBlenderXformInputProcessor::HandleMouseButtonDownEvent(FSlateApplication&,
 	{
 		return false;
 	}
+	// Only the viewport the op started in may confirm/cancel it. A click in another viewport (which
+	// makes it active) or over non-viewport UI must pass through untouched - Blender doesn't confirm a
+	// transform by clicking a different panel.
+	if (!OwnsViewport(ActiveLevelViewport()))
+	{
+		return false;
+	}
 	const FKey Button = MouseEvent.GetEffectingButton();
-	if (Button == EKeys::LeftMouseButton)  { Op.Commit(); return true; }
-	if (Button == EKeys::RightMouseButton) { Op.Cancel(); return true; }
+	if (Button == EKeys::LeftMouseButton)  { EndActiveOperation(true);  return true; }
+	if (Button == EKeys::RightMouseButton) { EndActiveOperation(false); return true; }
 	return true; // swallow other buttons during the op
 }

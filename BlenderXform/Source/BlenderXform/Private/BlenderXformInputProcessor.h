@@ -17,6 +17,7 @@ struct FBlenderXformInputPolicy
 	static bool ShouldToggleSurfaceSnap(EXMode Mode, const FKey& Key, bool bIsRepeat,
 	                                    bool bShiftDown, bool bControlDown, bool bCommandDown, bool bAltDown);
 	static bool HasMovedForSurfaceSnap(const FVector2D& Start, const FVector2D& Now);
+	static bool OwnsViewport(const FLevelEditorViewportClient* Initiating, const FLevelEditorViewportClient* Candidate);
 };
 
 /**
@@ -44,8 +45,11 @@ public:
 private:
 	bool IsEnabled() const;
 	bool CanStartHere() const;     // enabled + cursor over the active level viewport + has selection
-	void CaptureStartCursor();     // record the pixel where the op began
+	void CaptureStartCursor();     // record the pixel + binding viewport where the op began
 	void UpdateFromMouse();        // refresh tuning + deproject current cursor + feed the op
+	void EndActiveOperation(bool bCommit); // single lifecycle exit: Commit/Cancel + release the bound viewport
+	bool OwnsViewport(const FLevelEditorViewportClient* VC) const; // true if VC is the viewport the op started in
+	bool IsInitiatingViewportLive() const; // bound viewport still registered (not closed/destroyed)
 	FXTuning BuildTuning(bool bSnap, bool bPrecision) const; // settings + live Ctrl(snap)/Shift(fine)
 	void RefreshTuningFromModifiers(); // read current Ctrl/Shift and push to the op (no key interception)
 	bool ComputeSnapActive() const;    // Ctrl held OR UE's per-mode grid-snap toggle on (for the op's mode)
@@ -55,6 +59,7 @@ private:
 
 	FBlenderXformOp Op;
 	FXEditorSink Sink;
+	FLevelEditorViewportClient* InitiatingViewportClient = nullptr; // viewport the active op started in; null when idle
 	FVector2D StartPixel = FVector2D::ZeroVector;
 	bool bSurfaceSnapEnabled = false;      // session-level C toggle; persists across Commit/Cancel
 	bool bMouseMovedSinceOpStart = false; // prevents an enabled mode from teleporting on the G key-down

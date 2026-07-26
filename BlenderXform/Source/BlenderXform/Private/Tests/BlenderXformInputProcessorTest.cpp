@@ -54,4 +54,33 @@ bool FBlenderXformSurfaceSnapInputPolicyTest::RunTest(const FString&)
 	return true;
 }
 
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformViewportOwnershipPolicyTest, "BlenderXform.Input.ViewportOwnership",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FBlenderXformViewportOwnershipPolicyTest::RunTest(const FString&)
+{
+	// Sentinel addresses stand in for distinct viewport clients; the policy is a pure pointer-identity
+	// check and never dereferences them.
+	FLevelEditorViewportClient* const VP_A = reinterpret_cast<FLevelEditorViewportClient*>(static_cast<uintptr_t>(0x1000));
+	FLevelEditorViewportClient* const VP_B = reinterpret_cast<FLevelEditorViewportClient*>(static_cast<uintptr_t>(0x2000));
+
+	TestTrue(TEXT("the initiating viewport owns itself"),
+		FBlenderXformInputPolicy::OwnsViewport(VP_A, VP_A));
+
+	// Task 1.1: once an op starts in VP_A, another viewport client must not become the mouse-update
+	// source, and a click in it must not commit/cancel the op.
+	TestFalse(TEXT("a different viewport is not owned - cannot become the update source"),
+		FBlenderXformInputPolicy::OwnsViewport(VP_A, VP_B));
+	TestFalse(TEXT("a click in a non-initiating viewport does not own the op"),
+		FBlenderXformInputPolicy::OwnsViewport(VP_A, VP_B));
+
+	TestFalse(TEXT("no candidate viewport is not owned"),
+		FBlenderXformInputPolicy::OwnsViewport(VP_A, nullptr));
+	TestFalse(TEXT("with no active op (null initiating) nothing is owned"),
+		FBlenderXformInputPolicy::OwnsViewport(nullptr, VP_A));
+	TestFalse(TEXT("two null viewports own nothing"),
+		FBlenderXformInputPolicy::OwnsViewport(nullptr, nullptr));
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
