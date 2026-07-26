@@ -503,6 +503,14 @@ void FBlenderXformOp::Recompute()
 				A.MoveDelta = FBlenderXformSurfaceSnap::SolveMoveDelta(
 					Fallback, A.Pivot, Sink->SurfaceBounds(), Con, Tuning, LastSurfaceSnap.Hit, 0.1, bSurfaceSnapApplied);
 			}
+			// Surface normal-align (C hold): spin the selection so world Up follows the hit normal, about
+			// the contact point. Suppressed by an axis/plane constraint (N3) and by numeric entry.
+			if (!bHasNumeric && LastSurfaceSnap.bAlignHeld && Con.Axis == EXAxis::Free && LastSurfaceSnap.Hit.bValid)
+			{
+				A.bAlignApplied = true;
+				A.AlignPivot = LastSurfaceSnap.Hit.Point;
+				A.AlignQuat = FBlenderXformMath::AlignUpToNormalQuat(LastSurfaceSnap.Hit.Normal);
+			}
 			break;
 		}
 		case EXMode::Scale:

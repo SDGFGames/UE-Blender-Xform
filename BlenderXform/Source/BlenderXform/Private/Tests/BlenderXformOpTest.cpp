@@ -504,4 +504,80 @@ bool FBlenderXformOpNumericValidityTest::RunTest(const FString&)
 	return true;
 }
 
+
+// --- Surface normal-align (C hold): Op fills AlignQuat when Free + align-held + hit (Task C). ---
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformOpSurfaceAlignTest, "BlenderXform.Op.SurfaceAlign",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FBlenderXformOpSurfaceAlignTest::RunTest(const FString&)
+{
+	const FVector Pivot(0, 0, 0);
+
+	auto MakeHit = [](const FVector& Point, const FVector& Normal) {
+		FXSurfaceSnapState S;
+		S.bAlignHeld = true;
+		S.bTraceAttempted = true;
+		S.Hit.bValid = true;
+		S.Hit.Point = Point;
+		S.Hit.Normal = Normal;
+		return S;
+	};
+
+	// Free + align-held + valid hit (wall +X normal): align applied, AlignQuat maps Up to +X.
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Move, S);
+		// Free (no CycleAxis). Feed a hit with +X normal.
+		FXSurfaceSnapState Hit = MakeHit(FVector(100, 0, 0), FVector(1, 0, 0));
+		Op.UpdateFromScreen(FVector::ZeroVector, FVector(100, 0, 0), FVector2D(0, 0), FVector2D(0, 0), FVector2D(0, 0), FVector(0, 0, -1), Hit);
+		const FXApplied& A = Op.LastApplied();
+		TestTrue(TEXT("align applied when Free + held + hit"), A.bAlignApplied);
+		TestTrue(TEXT("align pivot is the hit point"), A.AlignPivot.Equals(FVector(100, 0, 0), 1e-3));
+		TestTrue(TEXT("align quat maps Up to +X"),
+			A.AlignQuat.RotateVector(FVector(0, 0, 1)).Equals(FVector(1, 0, 0), 1e-3));
+	}
+
+	// Axis constraint set: align suppressed (N3), even with align-held + valid hit.
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Move, S);
+		Op.CycleAxis(EXAxis::X, false);
+		FXSurfaceSnapState Hit = MakeHit(FVector(100, 0, 0), FVector(1, 0, 0));
+		Op.UpdateFromScreen(FVector::ZeroVector, FVector(100, 0, 0), FVector2D(0, 0), FVector2D(0, 0), FVector2D(0, 0), FVector(0, 0, -1), Hit);
+		const FXApplied& A = Op.LastApplied();
+		TestFalse(TEXT("align suppressed by axis constraint"), A.bAlignApplied);
+	}
+
+	// Miss (align-held, trace attempted, hit invalid): align not applied, rotation unchanged.
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Move, S);
+		FXSurfaceSnapState Miss;
+		Miss.bAlignHeld = true;
+		Miss.bTraceAttempted = true;
+		Miss.Hit.bValid = false;
+		Op.UpdateFromScreen(FVector::ZeroVector, FVector(100, 0, 0), FVector2D(0, 0), FVector2D(0, 0), FVector2D(0, 0), FVector(0, 0, -1), Miss);
+		const FXApplied& A = Op.LastApplied();
+		TestFalse(TEXT("align not applied on miss"), A.bAlignApplied);
+	}
+
+	// Numeric Move bypasses align (even with align-held + valid hit).
+	{
+		FFakeSink S;
+		FBlenderXformOp Op;
+		Op.Begin(EXMode::Move, S);
+		Op.CycleAxis(EXAxis::X, false); // numeric needs an axis
+		Op.PushDigit(TEXT('5'));
+		FXSurfaceSnapState Hit = MakeHit(FVector(100, 0, 0), FVector(1, 0, 0));
+		Op.UpdateFromScreen(FVector::ZeroVector, FVector(100, 0, 0), FVector2D(0, 0), FVector2D(0, 0), FVector2D(0, 0), FVector(0, 0, -1), Hit);
+		const FXApplied& A = Op.LastApplied();
+		TestFalse(TEXT("numeric Move bypasses align"), A.bAlignApplied);
+	}
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

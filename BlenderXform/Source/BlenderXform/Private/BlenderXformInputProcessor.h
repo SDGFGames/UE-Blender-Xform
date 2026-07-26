@@ -93,6 +93,8 @@ private:
 	FLevelEditorViewportClient* InitiatingViewportClient = nullptr; // viewport the active op started in; null when idle
 	FVector2D StartPixel = FVector2D::ZeroVector;
 	bool bSurfaceSnapEnabled = false;      // session-level C toggle; persists across Commit/Cancel
+	bool bAlignHeld = false;               // transient: C held during Move => surface normal-align (Task C)
+	bool bCSawRepeat = false;              // C press->release discrimination: did a key-repeat fire before release?
 	bool bMouseMovedSinceOpStart = false; // prevents an enabled mode from teleporting on the G key-down
 	bool bLastSnapActive = false;  // last snap state (Ctrl || UE grid-snap toggle) + Shift, to re-apply
 	bool bLastShiftDown = false;   // on a stationary change (tap Ctrl, or flip the UE snap toggle)

@@ -241,6 +241,9 @@ void FBlenderXformInputProcessor::EndActiveOperation(bool bCommit)
 	// Release the bound viewport on every exit (commit, cancel, toggle-off, unload) so a stale binding
 	// can't leak into the next op or dereference a viewport about to be destroyed.
 	InitiatingViewportClient = nullptr;
+	// Align is a hold-modifier tied to the active Move; it never outlives the op.
+	bAlignHeld = false;
+	bCSawRepeat = false;
 }
 
 FBlenderXformInputProcessor::~FBlenderXformInputProcessor()
@@ -260,6 +263,8 @@ void FBlenderXformInputProcessor::Shutdown()
 		EndActiveOperation(false);
 	}
 	bSurfaceSnapEnabled = false;
+	bAlignHeld = false;
+	bCSawRepeat = false;
 	InitiatingViewportClient = nullptr;
 	bViewCacheValid = false;
 	CachedViewVC = nullptr;
@@ -372,7 +377,9 @@ void FBlenderXformInputProcessor::UpdateFromMouse()
 
 	FXSurfaceSnapState SurfaceSnap;
 	SurfaceSnap.bEnabled = bSurfaceSnapEnabled;
-	if (bSurfaceSnapEnabled && Op.GetMode() == EXMode::Move && bMouseMovedSinceOpStart && !Op.HasNumeric())
+	SurfaceSnap.bAlignHeld = bAlignHeld;
+	// Trace when either contact or align is active (align needs a surface hit to rotate onto).
+	if ((bSurfaceSnapEnabled || bAlignHeld) && Op.GetMode() == EXMode::Move && bMouseMovedSinceOpStart && !Op.HasNumeric())
 	{
 		SurfaceSnap.bTraceAttempted = true;
 		// Reuse the Now ray deprojected above rather than deprojecting a second time.
@@ -425,6 +432,8 @@ void FBlenderXformInputProcessor::Tick(const float, FSlateApplication&, TSharedR
 	if (!IsEnabled())
 	{
 		bSurfaceSnapEnabled = false;
+	bAlignHeld = false;
+	bCSawRepeat = false;
 		if (Op.IsActive())
 		{
 			EndActiveOperation(false);
@@ -497,11 +506,29 @@ bool FBlenderXformInputProcessor::HandleKeyDownEvent(FSlateApplication&, const F
 
 		if (K == EKeys::C && Op.GetMode() == EXMode::Move)
 		{
-			if (FBlenderXformInputPolicy::ShouldToggleSurfaceSnap(Op.GetMode(), K, InKeyEvent.IsRepeat(),
-				InKeyEvent.IsShiftDown(), InKeyEvent.IsControlDown(), InKeyEvent.IsCommandDown(), InKeyEvent.IsAltDown()))
+			// C does double duty: short press toggles contact; hold (key-repeat) activates surface
+			// normal-align. Discriminated by whether a repeat fired before release - NOT a timer - so a
+			// deliberate hold can't be misread as a short press and accidentally toggle contact off.
+			if (InKeyEvent.IsRepeat())
 			{
-				bSurfaceSnapEnabled = !bSurfaceSnapEnabled;
-				UpdateFromMouse();
+				// Hold in progress: turn align on (idempotent). Contact is NOT toggled by a hold.
+				bCSawRepeat = true;
+				if (!bAlignHeld)
+				{
+					bAlignHeld = true;
+					UpdateFromMouse();
+				}
+			}
+			else
+			{
+				// First press: enter a candidate state. Contact toggling is decided on release (see
+				// HandleKeyUpEvent) so we can tell short-press from hold. Only valid as a contact candidate
+				// when unmodified (Shift+C etc. stay native).
+				if (FBlenderXformInputPolicy::ShouldToggleSurfaceSnap(Op.GetMode(), K, /*bIsRepeat*/ false,
+					InKeyEvent.IsShiftDown(), InKeyEvent.IsControlDown(), InKeyEvent.IsCommandDown(), InKeyEvent.IsAltDown()))
+				{
+					bCSawRepeat = false;
+				}
 			}
 			return true;
 		}
@@ -580,6 +607,22 @@ bool FBlenderXformInputProcessor::HandleKeyUpEvent(FSlateApplication&, const FKe
 		EndActiveOperation(false);
 		return true;
 	}
+
+	// C release: end the hold. If no key-repeat fired before release (short press), toggle contact;
+	// if a repeat fired (hold), leave contact untouched - the hold only ever managed align.
+	if (Op.IsActive() && Op.GetMode() == EXMode::Move && InKeyEvent.GetKey() == EKeys::C)
+	{
+		const bool bWasHold = bCSawRepeat;
+		bAlignHeld = false;
+		bCSawRepeat = false;
+		if (!bWasHold)
+		{
+			bSurfaceSnapEnabled = !bSurfaceSnapEnabled;
+		}
+		UpdateFromMouse();
+		return true;
+	}
+
 	return false;
 }
 

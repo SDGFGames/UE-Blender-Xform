@@ -15,6 +15,7 @@ struct FXSurfaceHit
 struct FXSurfaceSnapState
 {
 	bool bEnabled = false;
+	bool bAlignHeld = false;     // C held during Move: rotate selection so Up follows the hit normal
 	bool bTraceAttempted = false;
 	FXSurfaceHit Hit;
 };
