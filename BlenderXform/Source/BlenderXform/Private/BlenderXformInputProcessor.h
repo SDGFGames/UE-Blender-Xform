@@ -71,6 +71,8 @@ public:
 	void Shutdown();
 
 	const FBlenderXformOp& GetOp() const { return Op; }
+	/** The viewport the active op started in (null when idle). HUD draws only on this viewport (Task 3.4). */
+	FLevelEditorViewportClient* GetInitiatingViewportClient() const { return InitiatingViewportClient; }
 
 private:
 	bool IsEnabled() const;

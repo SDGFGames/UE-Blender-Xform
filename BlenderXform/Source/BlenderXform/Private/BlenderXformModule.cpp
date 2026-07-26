@@ -9,6 +9,7 @@
 #include "Framework/Commands/InputChord.h"    // FInputChord, EModifierKey
 #include "InputCoreTypes.h"                    // EKeys
 #include "LevelEditor.h"                       // FLevelEditorModule (global command list)
+#include "LevelEditorViewport.h"               // GCurrentLevelEditingViewportClient (HUD initiating-viewport check)
 
 #include "BlenderXformInputProcessor.h"
 #include "BlenderXformHUD.h"
@@ -91,9 +92,22 @@ public:
 			HUD = MakeUnique<FBlenderXformHUD>(
 				[Proc]() -> FString
 				{
+					// Task 3.4: draw only on the viewport the op started in. UDebugDrawService fires Draw per
+					// level-editor viewport; the active one (GCurrentLevelEditingViewportClient) is the
+					// initiating one while an op runs (D1 cancels if focus leaves it), so a non-initiating
+					// viewport gets an empty string and the HUD draws nothing there. Without this, a 4-pane
+					// layout would show the tag in every pane.
+					if (!Proc || !Proc->GetOp().IsActive())
+					{
+						return FString();
+					}
+					if (GCurrentLevelEditingViewportClient != Proc->GetInitiatingViewportClient())
+					{
+						return FString();
+					}
 					// Compact cursor read-out (CursorTag). Swap to Op.Hud() for the full
 					// "Move | X (local) | 5.00" string if a corner/full tag is ever wanted.
-					return (Proc && Proc->GetOp().IsActive()) ? Proc->GetOp().CursorTag() : FString();
+					return Proc->GetOp().CursorTag();
 				},
 				[Proc]() -> FXAxisOverlay
 				{

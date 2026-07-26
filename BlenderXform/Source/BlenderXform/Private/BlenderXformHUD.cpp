@@ -86,7 +86,8 @@ void FBlenderXformHUD::Draw(UCanvas* Canvas, APlayerController* /*PC*/)
 		return;
 	}
 
-	// The compact cursor tag; empty when no op is active => draw neither the tag nor the hint bar.
+	// The compact cursor tag; empty when no op is active (or this isn't the initiating viewport) => draw
+	// neither the tag nor the hint bar.
 	const FString Tag = GetText();
 	if (Tag.IsEmpty())
 	{

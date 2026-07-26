@@ -4,6 +4,7 @@
 
 class UCanvas;
 class APlayerController;
+class UWorld;
 
 /**
  * Constraint guide lines to overlay during an op: a world-space line through Pivot along each Dir,
@@ -21,6 +22,8 @@ struct FXAxisOverlay
  * Draws the active op's status string (e.g. "Move | X (local) | 5") plus axis guide lines onto the
  * editor viewport via UDebugDrawService. Decoupled from the op: it pulls the text and the overlay
  * through supplied callbacks, which return empty/inactive when no op is running (so nothing draws).
+ * The text callback scopes itself to the initiating viewport (Task 3.4): a non-initiating viewport
+ * gets an empty string and draws nothing.
  */
 class FBlenderXformHUD
 {
