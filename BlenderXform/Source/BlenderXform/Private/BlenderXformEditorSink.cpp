@@ -634,27 +634,77 @@ void FXEditorSink::ClearComponent(EXMode Mode)
 		{
 			continue;
 		}
+		USceneComponent* Root = Actor->GetRootComponent();
 		Actor->Modify();
-		if (USceneComponent* Root = Actor->GetRootComponent())
+		if (Root)
 		{
 			Root->Modify();
 		}
 
-		FTransform T = Actor->GetActorTransform();
-		switch (Mode)
+		// Task 1.6: Alt+G/S/R clears RELATIVE transform on an attached actor (Blender clears the
+		// transform relative to its parent), and WORLD transform on a standalone one. Attached actors
+		// moved to world (0,0,0) would jump to the world origin instead of staying put relative to parent.
+		const bool bAttached = (Actor->GetAttachParentActor() != nullptr);
+		bool bChanged = false;
+		if (bAttached && Root)
 		{
-			case EXMode::Move:   T.SetLocation(FVector::ZeroVector); break; // Alt+G
-			case EXMode::Scale:  T.SetScale3D(FVector::OneVector);   break; // Alt+S
-			case EXMode::Rotate: T.SetRotation(FQuat::Identity);     break; // Alt+R
-			default: break;
+			switch (Mode)
+			{
+				case EXMode::Move:
+					if (!Root->GetRelativeLocation().Equals(FVector::ZeroVector, 1e-4))
+					{
+						Root->SetRelativeLocation(FVector::ZeroVector, false, nullptr, ETeleportType::TeleportPhysics);
+						bChanged = true;
+					}
+					break;
+				case EXMode::Scale:
+					if (!Root->GetRelativeScale3D().Equals(FVector::OneVector, 1e-4))
+					{
+						Root->SetRelativeScale3D(FVector::OneVector);
+						bChanged = true;
+					}
+					break;
+				case EXMode::Rotate:
+					if (!Root->GetRelativeRotation().Quaternion().Equals(FQuat::Identity, 1e-4))
+					{
+						Root->SetRelativeRotation(FQuat::Identity, false, nullptr, ETeleportType::TeleportPhysics);
+						bChanged = true;
+					}
+					break;
+				default: break;
+			}
 		}
-		Actor->SetActorTransform(T, false, nullptr, ETeleportType::TeleportPhysics);
-		bAny = true;
+		else
+		{
+			FTransform T = Actor->GetActorTransform();
+			switch (Mode)
+			{
+				case EXMode::Move:   bChanged = !T.GetLocation().Equals(FVector::ZeroVector, 1e-4);
+				                     T.SetLocation(FVector::ZeroVector); break; // Alt+G
+				case EXMode::Scale:  bChanged = !T.GetScale3D().Equals(FVector::OneVector, 1e-4);
+				                     T.SetScale3D(FVector::OneVector);   break; // Alt+S
+				case EXMode::Rotate: bChanged = !T.GetRotation().Equals(FQuat::Identity, 1e-4);
+				                     T.SetRotation(FQuat::Identity);     break; // Alt+R
+				default: break;
+			}
+			if (bChanged)
+			{
+				Actor->SetActorTransform(T, false, nullptr, ETeleportType::TeleportPhysics);
+			}
+		}
+
+		if (bChanged)
+		{
+			// Final move notification (same as the modal Commit path) so Blueprints/construction scripts
+			// and dependent visuals refresh after a clear.
+			Actor->PostEditMove(true);
+			bAny = true;
+		}
 	}
 
 	if (!bAny)
 	{
-		Tx.Cancel();
+		Tx.Cancel(); // no actor actually changed - drop the empty undo step
 		return;
 	}
 

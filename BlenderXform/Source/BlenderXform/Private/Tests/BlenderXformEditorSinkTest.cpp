@@ -200,4 +200,76 @@ bool FBlenderXformEditorSinkTransformabilityRulesTest::RunTest(const FString&)
 	return true;
 }
 
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlenderXformEditorSinkAttachedAltClearTest, "BlenderXform.EditorSink.AttachedAltClear",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FBlenderXformEditorSinkAttachedAltClearTest::RunTest(const FString&)
+{
+	// Task 1.6: Alt+G on an attached actor clears its RELATIVE location (stays put w.r.t. its parent),
+	// not its world location (which would jump it to the world origin). Same relative semantics for
+	// Alt+S/Alt+R; standalone actors keep clearing world transform.
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!TestNotNull(TEXT("editor world is available"), World))
+	{
+		return false;
+	}
+
+	auto SpawnWithRoot = [&](const FVector& Loc) -> AActor*
+	{
+		FActorSpawnParameters P;
+		P.ObjectFlags |= RF_Transient;
+		AActor* A = World->SpawnActor<AActor>(AActor::StaticClass(), FTransform(Loc), P);
+		if (A)
+		{
+			UBoxComponent* Box = NewObject<UBoxComponent>(A, NAME_None, RF_Transient);
+			A->AddInstanceComponent(Box);
+			A->SetRootComponent(Box);
+			Box->SetMobility(EComponentMobility::Movable);
+			Box->RegisterComponent();
+		}
+		return A;
+	};
+
+	const FVector ParentLoc(500.0, 0.0, 0.0);
+	AActor* Parent = SpawnWithRoot(FVector::ZeroVector);
+	AActor* Child  = SpawnWithRoot(FVector::ZeroVector);
+	if (!TestNotNull(TEXT("parent spawned"), Parent) || !TestNotNull(TEXT("child spawned"), Child))
+	{
+		if (Parent) { World->DestroyActor(Parent); }
+		if (Child)  { World->DestroyActor(Child); }
+		return false;
+	}
+	// SetRootComponent on a freshly-spawned empty actor resets its location to the new root's (origin),
+	// so position the parent AFTER its root exists and read the real location back.
+	Parent->SetActorLocation(ParentLoc, false, nullptr, ETeleportType::None);
+	const FVector RealParentLoc = Parent->GetActorLocation();
+
+	// Attach child to parent with a non-zero relative offset, then Alt+G should zero the RELATIVE
+	// location - so the child ends up AT the parent's world location, not at the world origin.
+	Child->AttachToActor(Parent, FAttachmentTransformRules::KeepRelativeTransform);
+	Child->SetActorRelativeLocation(FVector(100.0, 50.0, 25.0));
+	TestTrue(TEXT("child is attached to the parent"), Child->GetAttachParentActor() == Parent);
+	const FVector WorldBeforeClear = Child->GetActorLocation(); // == RealParentLoc + (100,50,25)
+	TestTrue(TEXT("attached child has a non-origin world position before clear"),
+		!WorldBeforeClear.Equals(FVector::ZeroVector, 1.0));
+
+	{
+		FXEditorSink Sink;
+		// Select ONLY the child so the clear targets it (not the parent).
+		GEditor->SelectActor(Parent, false, false);
+		GEditor->SelectActor(Child, true, false);
+		Sink.ClearComponent(EXMode::Move);
+	}
+
+	TestTrue(TEXT("Alt+G on an attached child zeros its RELATIVE location (lands on the parent)"),
+		Child->GetActorLocation().Equals(RealParentLoc, 1.0));
+	TestFalse(TEXT("Alt+G did not send the attached child to the world origin"),
+		Child->GetActorLocation().Equals(FVector::ZeroVector, 1.0));
+
+	GEditor->SelectActor(Child, false, false);
+	World->DestroyActor(Child);
+	World->DestroyActor(Parent);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
