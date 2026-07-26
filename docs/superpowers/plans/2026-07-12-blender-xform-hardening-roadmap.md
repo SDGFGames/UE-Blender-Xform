@@ -283,6 +283,8 @@ Expected: 0 failed、0 not run。
 
 **目标版本建议：** `0.4.0`
 
+**完成状态：** Tasks 3.1–3.4 已实现并提交（commits `beccb2d`–`00894a7`）。自动化验证门已过（42 succeeded / 0 failed / 0 not run）。手动验收（高轮询率鼠标 + 大型选区的每帧 trace/apply 计数、复杂/简单/隐藏/旋转网格/视觉外伸、四视口 HUD 只在发起视口）待 owner 在编辑器中执行。
+
 ## Task 3.1：输入更新和 Surface Trace 每帧合并
 
 **Files:**
@@ -350,7 +352,7 @@ Expected: 0 failed、0 not run。
 
 ## Iteration 3 Verification Gate
 
-- [ ] 完整构建和测试通过。
+- [x] 完整构建和测试通过。
 - [ ] 用高轮询率鼠标和大型选区观察每帧 trace/apply 次数。
 - [ ] 验证复杂碰撞、简单碰撞、隐藏 Actor、旋转 Mesh、视觉外伸 Mesh。
 - [ ] 四视口布局中 HUD 不重复、不串 viewport。
