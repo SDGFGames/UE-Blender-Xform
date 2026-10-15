@@ -267,9 +267,11 @@ bool FBlenderXformMathRayPlaneTest::RunTest(const FString&)
 	TestTrue(TEXT("valid hit"), bValid);
 	TestTrue(TEXT("hits plane origin"), Hit.Equals(FVector::ZeroVector, 1e-3));
 
-	// Parallel ray -> invalid, returns the plane point sentinel.
+	// Parallel ray -> invalid, returns the plane point sentinel. Keep zero runtime-loaded so MSVC unity optimization
+	// still exercises the denominator guard without a constant-folded divide-by-zero diagnostic.
+	volatile double ParallelZ = 0.0;
 	const FVector Par = FBlenderXformMath::RayPlaneIntersect(
-		FVector(0, 0, 10), FVector(1, 0, 0), FVector(7, 7, 0), FVector(0, 0, 1), bValid);
+		FVector(0, 0, 10), FVector(1, 0, ParallelZ), FVector(7, 7, 0), FVector(0, 0, 1), bValid);
 	TestFalse(TEXT("parallel is invalid"), bValid);
 	TestTrue(TEXT("parallel returns plane point"), Par.Equals(FVector(7, 7, 0), 1e-3));
 
